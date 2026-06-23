@@ -235,6 +235,12 @@ const handlers = {
   },
 
   async cancel_appointment(args, { state }) {
+    // Nothing to cancel — don't call out to Apps Script or touch state. This
+    // stops the model from firing a stray cancel when the lead is still just
+    // picking a slot (no booking exists yet).
+    if (!state.fields?.visit_event_id) {
+      return { ok: false, reason: "no visit is currently booked for this lead" };
+    }
     const res = await appsscript.cancelAppointment({
       phone: state.phone,
       event_id: state.fields?.visit_event_id,
