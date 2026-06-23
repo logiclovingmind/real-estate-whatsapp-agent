@@ -12,6 +12,7 @@ import {
   verifySignature,
   parseInbound,
   sendText,
+  stripMarkdown,
 } from "./whatsapp.js";
 import { getState, saveState } from "./state.js";
 import { handleMessage } from "./agent.js";
@@ -77,6 +78,45 @@ app.get("/api/dashboard", dashboardAuth, async (_req, res) => {
     generatedAt: new Date().toISOString(),
     metrics,
   });
+});
+
+// --- Agent test console (same Basic Auth as the dashboard) ---
+// A browser chat that drives the real agent loop, so you can sanity-check
+// behavior without WhatsApp/Meta. Conversations are keyed by a "web-*" phone
+// the page generates; "New chat" just mints a fresh one. Note: this exercises
+// the LIVE agent, so upsert_lead/book_appointment hit the real Sheet/Calendar.
+
+app.get("/chat", dashboardAuth, (_req, res) => {
+  res.type("html").send(readFileSync(join(__dirname, "chat.html"), "utf8"));
+});
+
+app.get("/api/chat/meta", dashboardAuth, (_req, res) => {
+  res.json({ ok: true, businessName: process.env.BUSINESS_NAME || "Real Estate" });
+});
+
+app.post("/api/chat", dashboardAuth, async (req, res) => {
+  const phone = String(req.body?.phone || "").trim();
+  const text = String(req.body?.text || "").trim();
+  if (!phone || !text) {
+    return res.status(400).json({ ok: false, reason: "phone and text required" });
+  }
+  try {
+    const state = getState(phone);
+    const { reply, handoff, handoffReason } = await handleMessage(state, text, {
+      onHandoff: notifyOwner,
+    });
+    res.json({
+      ok: true,
+      reply: stripMarkdown(reply),
+      handoff: !!handoff,
+      handoffReason: handoffReason || "",
+      stage: state.stage,
+      fields: state.fields || {},
+    });
+  } catch (err) {
+    console.error("chat console turn failed:", err);
+    res.status(500).json({ ok: false, reason: err.message });
+  }
 });
 
 // Webhook verification (Meta calls this once during setup).

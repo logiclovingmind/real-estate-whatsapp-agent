@@ -207,11 +207,18 @@ const handlers = {
       };
     }
 
+    // Ensure the CRM row exists BEFORE booking. The Apps Script booking only
+    // patches an existing row, so booking without a prior upsert_lead would
+    // create a Calendar event with no Sheet record. Upserting here guarantees
+    // every booked visit has a lead row.
+    const lead = leadFromState(state, "booked");
+    await appsscript.upsertLead(lead);
+
     const booking = {
       phone: state.phone,
       name: state.fields?.name || "",
       datetime: args.datetime,
-      lead: leadFromState(state, "booked"),
+      lead,
     };
     const res = await appsscript.bookAppointment(booking);
     if (res?.ok) {

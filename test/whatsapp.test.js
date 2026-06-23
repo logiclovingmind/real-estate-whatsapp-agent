@@ -1,7 +1,17 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
-import { parseInbound, verifySignature } from "../src/whatsapp.js";
+import { parseInbound, verifySignature, stripMarkdown } from "../src/whatsapp.js";
+
+test("stripMarkdown flattens bold, links, headings for WhatsApp", () => {
+  assert.equal(stripMarkdown("**Date:** 6:15 PM"), "Date: 6:15 PM");
+  assert.equal(
+    stripMarkdown("[Visit Link](https://cal.example/e?eid=abc)"),
+    "https://cal.example/e?eid=abc"
+  );
+  assert.equal(stripMarkdown("## Slots\n1. **10 AM**"), "Slots\n1. 10 AM");
+  assert.equal(stripMarkdown("plain text"), "plain text");
+});
 
 test("parseInbound extracts a text message", () => {
   const body = {

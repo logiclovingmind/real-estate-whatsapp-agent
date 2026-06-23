@@ -82,7 +82,7 @@ function prop(key, fallback) {
 }
 
 function doGet() {
-  return json({ ok: true, service: "real-estate-agent", status: "healthy", version: "v10-budget" });
+  return json({ ok: true, service: "real-estate-agent", status: "healthy", version: "v11-rentbudget" });
 }
 
 function doPost(e) {
@@ -193,7 +193,10 @@ function findRow(sheet, phone) {
 // Convert a freeform budget value ("80 lakh", "0.8 cr", 8000000, "₹80,00,000")
 // to a number of rupees. Raw budget_min/budget_max stay in the (hidden) data;
 // this only drives the readable "Budget" display column.
-function toRupees(raw) {
+// Convert a freeform budget to rupees. For rent, bare numbers are literal
+// monthly amounts (25000 -> ₹25,000); for buy/invest a bare number is assumed
+// to be lakhs (80 -> ₹80 L), which is how people quote purchase budgets.
+function toRupees(raw, isRent) {
   if (raw == null || raw === "") return null;
   var s = String(raw).toLowerCase().replace(/,/g, "").replace(/₹/g, "").trim();
   var m = s.match(/(\d+(?:\.\d+)?)/);
@@ -202,6 +205,8 @@ function toRupees(raw) {
   if (isNaN(n)) return null;
   if (/cr|crore/.test(s)) return n * 1e7;
   if (/lakh|lac|lak/.test(s)) return n * 1e5;
+  if (/thousand/.test(s) || /\d\s*k\b/.test(s)) return n * 1e3;
+  if (isRent) return n;       // rent: a bare number is rupees/month, as-is
   if (n > 100000) return n;   // already in rupees
   return n * 1e5;             // bare number -> assume lakhs (typical for budgets)
 }
@@ -210,32 +215,49 @@ function trimNum(x) {
   return x.toFixed(2).replace(/\.?0+$/, "");
 }
 
-function inr(rupees) {
+// Indian digit grouping: 25000 -> ₹25,000, 150000 -> ₹1,50,000.
+function inrGroup(rupees) {
+  var s = String(Math.round(rupees));
+  if (s.length <= 3) return "₹" + s;
+  var last3 = s.slice(-3);
+  var rest = s.slice(0, -3).replace(/\B(?=(\d{2})+(?!\d))/g, ",");
+  return "₹" + rest + "," + last3;
+}
+
+function inr(rupees, isRent) {
   if (rupees == null) return "";
+  if (isRent) return inrGroup(rupees);     // rent: plain grouped rupees/month
   if (rupees >= 1e7) return "₹" + trimNum(rupees / 1e7) + " Cr";
   if (rupees >= 1e5) return "₹" + trimNum(rupees / 1e5) + " L";
   return "₹" + Math.round(rupees);
 }
 
-// Pretty rupee string for the Budget column: a range when min/max differ
-// ("₹70–80 L", "₹0.8–1.2 Cr"), otherwise a single value ("₹80 L").
-function formatBudget(minRaw, maxRaw) {
-  var lo = toRupees(minRaw), hi = toRupees(maxRaw);
+// Pretty rupee string for the Budget column. Buy/invest: "₹70–80 L", "₹0.8–1.2
+// Cr", "₹80 L". Rent: plain monthly amounts "₹25,000" / "₹20,000–25,000".
+function formatBudget(minRaw, maxRaw, intent) {
+  var isRent = String(intent || "").toLowerCase().indexOf("rent") !== -1;
+  var lo = toRupees(minRaw, isRent), hi = toRupees(maxRaw, isRent);
   if (lo == null && hi == null) return "";
   if (lo != null && hi != null && lo !== hi) {
     var top = Math.max(lo, hi), bot = Math.min(lo, hi);
+    if (isRent) return inrGroup(bot) + "–" + inrGroup(top).slice(1); // drop 2nd ₹
     var unit = top >= 1e7 ? 1e7 : (top >= 1e5 ? 1e5 : 1);
     var suf = top >= 1e7 ? " Cr" : (top >= 1e5 ? " L" : "");
     return "₹" + trimNum(bot / unit) + "–" + trimNum(top / unit) + suf;
   }
-  return inr(hi != null ? hi : lo);
+  return inr(hi != null ? hi : lo, isRent);
 }
 
-// Set the derived budget_display cell in a row array from its budget_min/max.
+// Set the derived budget_display cell in a row array from its budget_min/max,
+// using intent so rent budgets aren't mis-scaled into lakhs.
 function applyBudgetDisplay(arr) {
   var di = KEYS.indexOf("budget_display");
   if (di === -1) return arr;
-  arr[di] = formatBudget(arr[KEYS.indexOf("budget_min")], arr[KEYS.indexOf("budget_max")]);
+  arr[di] = formatBudget(
+    arr[KEYS.indexOf("budget_min")],
+    arr[KEYS.indexOf("budget_max")],
+    arr[KEYS.indexOf("intent")]
+  );
   return arr;
 }
 

@@ -59,6 +59,24 @@ export function parseInbound(body) {
   }
 }
 
+// Strip Markdown the model sometimes emits — WhatsApp renders **bold**,
+// [label](url) and # headings as literal junk. Flatten to clean plain text:
+// links become the bare (clickable) URL, emphasis/heading/code markers drop.
+export function stripMarkdown(text) {
+  if (!text) return text;
+  return String(text)
+    .replace(/!?\[([^\]]+)\]\(([^)\s]+)\)/g, (_m, label, url) =>
+      /^https?:\/\//i.test(url) ? url : label
+    )
+    .replace(/\*\*(.+?)\*\*/g, "$1")
+    .replace(/__(.+?)__/g, "$1")
+    .replace(/`{1,3}([^`]+)`{1,3}/g, "$1")
+    .replace(/^\s{0,3}#{1,6}\s+/gm, "")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 // Send a free-form text reply (only valid inside the 24h customer window).
 export async function sendText(to, text) {
   if (!TOKEN || !PHONE_NUMBER_ID) {
@@ -69,7 +87,7 @@ export async function sendText(to, text) {
     messaging_product: "whatsapp",
     to,
     type: "text",
-    text: { preview_url: false, body: text },
+    text: { preview_url: false, body: stripMarkdown(text) },
   };
   return graphSend(url, payload);
 }
@@ -113,4 +131,4 @@ async function graphSend(url, payload) {
   }
 }
 
-export default { verifySignature, parseInbound, sendText, sendTemplate };
+export default { verifySignature, parseInbound, sendText, sendTemplate, stripMarkdown };
