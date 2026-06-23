@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Leads Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --bg: #f6f7f9;
+      --card: #ffffff;
+      --line: #e8eaed;
+      --text: #1a1d24;
+      --muted: #6b7280;
+      --accent: #2563eb;
+      --good: #16a34a;
+      --warn: #d97706;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; background: var(--bg); color: var(--text);
+      font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+    header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 22px 32px; max-width: 1100px; margin: 0 auto;
+    }
+    .brand h1 { font-size: 20px; margin: 0; font-weight: 600; }
+    .brand .sub { color: var(--muted); font-size: 13px; margin-top: 2px; }
+    button {
+      background: var(--card); color: var(--text); border: 1px solid var(--line);
+      padding: 9px 16px; border-radius: 10px; cursor: pointer; font-size: 14px;
+    }
+    button:hover { border-color: var(--accent); color: var(--accent); }
+    main { padding: 0 32px 64px; max-width: 1100px; margin: 0 auto; }
+    .row { display: grid; gap: 16px; }
+    .kpis { grid-template-columns: repeat(4, 1fr); margin-bottom: 28px; }
+    @media (max-width: 760px) { .kpis { grid-template-columns: repeat(2, 1fr); } }
+    .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 20px 22px; }
+    .kpi .label { color: var(--muted); font-size: 13px; }
+    .kpi .value { font-size: 36px; font-weight: 700; margin-top: 8px; letter-spacing: -.5px; }
+    .kpi .hint { color: var(--muted); font-size: 12px; margin-top: 4px; }
+    .kpi.good .value { color: var(--good); }
+    .kpi.warn .value { color: var(--warn); }
+    .two { grid-template-columns: 1fr 1fr; margin-top: 16px; }
+    @media (max-width: 760px) { .two { grid-template-columns: 1fr; } }
+    h3 { margin: 0 0 4px; font-size: 16px; font-weight: 600; }
+    .cap { color: var(--muted); font-size: 13px; margin: 0 0 16px; }
+    .chart-wrap { position: relative; height: 240px; }
+    .pipeline { display: flex; flex-direction: column; gap: 12px; }
+    .stage { display: grid; grid-template-columns: 120px 1fr 40px; align-items: center; gap: 12px; }
+    .stage .name { font-size: 14px; color: var(--text); }
+    .stage .track { background: #eef1f5; border-radius: 8px; height: 26px; overflow: hidden; }
+    .stage .fill { height: 100%; border-radius: 8px; background: var(--accent); min-width: 2px; }
+    .stage .n { font-size: 14px; font-weight: 600; text-align: right; }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th, td { text-align: left; padding: 11px 8px; border-bottom: 1px solid var(--line); }
+    th { color: var(--muted); font-weight: 500; font-size: 13px; }
+    tr:last-child td { border-bottom: none; }
+    td a { color: var(--accent); text-decoration: none; }
+    .muted { color: var(--muted); }
+    .empty { color: var(--muted); padding: 18px 4px; }
+    #error { display: none; background: #fef2f2; border: 1px solid #fecaca; color: #b91c1c; padding: 14px 18px; border-radius: 12px; margin-bottom: 18px; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <h1 id="title">Leads Dashboard</h1>
+      <div class="sub" id="updated">Loading…</div>
+    </div>
+    <button id="refresh">Refresh</button>
+  </header>
+
+  <main>
+    <div id="error"></div>
+
+    <section class="row kpis" id="kpis"></section>
+
+    <section class="card">
+      <h3>New leads</h3>
+      <p class="cap">How many people reached out, last 30 days</p>
+      <div class="chart-wrap"><canvas id="trend"></canvas></div>
+    </section>
+
+    <section class="row two">
+      <div class="card">
+        <h3>Pipeline</h3>
+        <p class="cap">Where your leads stand right now</p>
+        <div class="pipeline" id="pipeline"></div>
+      </div>
+      <div class="card">
+        <h3>Top areas</h3>
+        <p class="cap">Most requested localities</p>
+        <div class="chart-wrap"><canvas id="areas"></canvas></div>
+      </div>
+    </section>
+
+    <section class="row two">
+      <div class="card">
+        <h3>Upcoming visits</h3>
+        <p class="cap">Site visits booked and coming up</p>
+        <div id="upcoming"></div>
+      </div>
+      <div class="card">
+        <h3>Leads to call</h3>
+        <p class="cap">Qualified, but no visit booked yet</p>
+        <div id="hot"></div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    let charts = {};
+    Chart.defaults.color = "#6b7280";
+    Chart.defaults.font.family = getComputedStyle(document.body).fontFamily;
+
+    const STAGE_LABELS = {
+      new: "New",
+      qualifying: "In conversation",
+      qualified: "Qualified",
+      booked: "Visit booked",
+      lost: "Lost",
+    };
+
+    function kpi(label, value, hint, cls) {
+      return `<div class="card kpi ${cls || ""}"><div class="label">${label}</div>
+        <div class="value">${value}</div>${hint ? `<div class="hint">${hint}</div>` : ""}</div>`;
+    }
+
+    function destroy(id) { if (charts[id]) { charts[id].destroy(); delete charts[id]; } }
+
+    function line(id, data) {
+      destroy(id);
+      charts[id] = new Chart(document.getElementById(id), {
+        type: "line",
+        data: {
+          labels: data.map((d) => d.label.slice(5)),
+          datasets: [{ data: data.map((d) => d.value), borderColor: "#2563eb", backgroundColor: "#2563eb14", fill: true, tension: 0.35, pointRadius: 0, borderWidth: 2 }],
+        },
+        options: { plugins: { legend: { display: false } }, scales: { x: { grid: { display: false }, ticks: { maxTicksLimit: 8 } }, y: { beginAtZero: true, border: { display: false }, ticks: { precision: 0, maxTicksLimit: 4 }, grid: { color: "#eef1f5" } } }, maintainAspectRatio: false },
+      });
+    }
+
+    function hbar(id, data) {
+      destroy(id);
+      charts[id] = new Chart(document.getElementById(id), {
+        type: "bar",
+        data: { labels: data.map((d) => d.label), datasets: [{ data: data.map((d) => d.value), backgroundColor: "#2563eb", borderRadius: 6, maxBarThickness: 22 }] },
+        options: { indexAxis: "y", plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true, border: { display: false }, ticks: { precision: 0, maxTicksLimit: 5 }, grid: { color: "#eef1f5" } }, y: { grid: { display: false }, border: { display: false } } }, maintainAspectRatio: false },
+      });
+    }
+
+    function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+
+    function pipeline(funnel) {
+      const max = Math.max(1, ...funnel.map((f) => f.value));
+      return funnel.map((f) => `
+        <div class="stage">
+          <div class="name">${STAGE_LABELS[f.label] || f.label}</div>
+          <div class="track"><div class="fill" style="width:${(f.value / max) * 100}%"></div></div>
+          <div class="n">${f.value}</div>
+        </div>`).join("");
+    }
+
+    function visitsTable(rows) {
+      if (!rows.length) return '<div class="empty">No upcoming visits yet.</div>';
+      return `<table><thead><tr><th>When</th><th>Name</th><th>Phone</th></tr></thead><tbody>${rows.map((r) => `
+        <tr><td>${esc(r.datetime)}</td><td>${esc(r.name)}</td><td class="muted">${esc(r.phone)}</td></tr>`).join("")}</tbody></table>`;
+    }
+
+    function hotTable(rows) {
+      if (!rows.length) return '<div class="empty">No one waiting — all caught up.</div>';
+      return `<table><thead><tr><th>Name</th><th>Looking for</th><th>Area</th></tr></thead><tbody>${rows.map((r) => `
+        <tr><td>${esc(r.name)}<div class="muted">${esc(r.phone)}</div></td><td>${esc(r.configuration)}</td><td>${esc(r.area)}</td></tr>`).join("")}</tbody></table>`;
+    }
+
+    async function load() {
+      const err = document.getElementById("error");
+      err.style.display = "none";
+      try {
+        const res = await fetch("/api/dashboard", { headers: { Accept: "application/json" } });
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        const body = await res.json();
+        if (!body.ok) throw new Error(body.reason || "failed");
+        render(body);
+      } catch (e) {
+        err.textContent = "Could not load dashboard data: " + e.message;
+        err.style.display = "block";
+      }
+    }
+
+    function render(body) {
+      const m = body.metrics, k = m.kpis;
+      document.title = body.businessName + " — Leads";
+      document.getElementById("title").textContent = body.businessName;
+      document.getElementById("updated").textContent = "Updated " + new Date(body.generatedAt).toLocaleString();
+
+      document.getElementById("kpis").innerHTML = [
+        kpi("Total leads", k.totalLeads, "all time"),
+        kpi("New this week", k.newThisWeek, k.newToday + " today"),
+        kpi("Leads to call", k.hotLeads, "qualified, not booked", "warn"),
+        kpi("Visits booked", k.booked, k.upcoming + " upcoming", "good"),
+      ].join("");
+
+      line("trend", m.trend);
+      document.getElementById("pipeline").innerHTML = pipeline(m.funnel);
+      hbar("areas", m.localities.slice(0, 5));
+      document.getElementById("upcoming").innerHTML = visitsTable(m.upcomingVisits.slice(0, 8));
+      document.getElementById("hot").innerHTML = hotTable(m.hotLeads.slice(0, 8));
+    }
+
+    document.getElementById("refresh").addEventListener("click", load);
+    load();
+  </script>
+</body>
+</html>
