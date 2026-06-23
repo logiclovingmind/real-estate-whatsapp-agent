@@ -137,10 +137,41 @@ export const toolSchemas = [
 // Each handler receives (args, ctx) where ctx = { state }. They mutate/persist
 // state as needed and return a compact object for the model.
 
-// Pick two slots spread across the day: one earlier, one later.
+// Offer one morning + one afternoon/evening slot so the lead gets a real
+// either/or — but ROTATE which exact times we pick so it doesn't always read as
+// the canned "10:00 AM / 6:15 PM". We split the day's free slots at noon, then
+// pick one from each half using a rotating offset; if a half is empty (e.g. all
+// morning slots already passed), fall back to spreading across what's left.
+let _pickCounter = 0;
 function pickTwo(slots) {
-  if (slots.length <= 2) return slots;
-  return [slots[0], slots[slots.length - 1]];
+  if (slots.length <= 2) return slots.slice();
+
+  // Read the hour straight from the IST ISO string (…T10:00:00+05:30) rather
+  // than via Date#getHours, which would use the Node process's timezone.
+  const hourOf = (s) => {
+    const m = /T(\d{2}):/.exec(s.start || "");
+    return m ? parseInt(m[1], 10) : 0;
+  };
+  const morning = slots.filter((s) => hourOf(s) < 12);
+  const later = slots.filter((s) => hourOf(s) >= 12);
+
+  // Rotate so successive conversations see different concrete times.
+  const rot = _pickCounter++;
+  const pickFrom = (group, salt) => group[(rot + salt) % group.length];
+
+  if (morning.length > 0 && later.length > 0) {
+    return [pickFrom(morning, 0), pickFrom(later, 1)];
+  }
+
+  // Only one half available: still give two spread-out times from it.
+  const group = morning.length > 0 ? morning : later;
+  const first = rot % group.length;
+  let second = (first + Math.ceil(group.length / 2)) % group.length;
+  if (second === first) second = (first + 1) % group.length;
+  const pair = [group[first], group[second]];
+  // Keep them in chronological order for a natural "X or Y" phrasing.
+  pair.sort((a, b) => (a.start < b.start ? -1 : 1));
+  return pair;
 }
 
 function leadFromState(state, stage) {
