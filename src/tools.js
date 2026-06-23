@@ -226,6 +226,10 @@ const handlers = {
       setField(state, "visit_datetime", args.datetime);
       if (res.event_id) setField(state, "visit_event_id", res.event_id);
       saveState(state);
+      // Never surface the internal Calendar event link to the model — it leaks
+      // our private calendar id and is useless to a lead. Return only the
+      // human-readable time so the confirmation stays clean.
+      return { ok: true, when: res.when };
     }
     return res;
   },

@@ -7,11 +7,14 @@ const GUJARATI_RANGE = /[\u0A80-\u0AFF]/;
 const DEVANAGARI_RANGE = /[\u0900-\u097F]/;
 
 // Common Hinglish/Hindi tokens written in Roman script.
+// NOTE: keep only tokens that are distinctly Hindi/Hinglish. Generic English
+// real-estate words ("flat", "budget", "area") were removed — they made pure
+// English leads (e.g. "I want a 3BHK flat") misclassify as Hinglish.
 const HINGLISH_HINTS = [
-  "hai", "haan", "nahi", "nahin", "kya", "kyా", "kaise", "kaisa", "kitna",
+  "hai", "haan", "nahi", "nahin", "kya", "kaise", "kaisa", "kitna",
   "kitne", "chahiye", "chaiye", "milega", "batao", "bata", "karo", "kar",
-  "acha", "accha", "theek", "thik", "ghar", "flat", "lena", "lege", "lunga",
-  "dekhna", "dikhao", "paisa", "rupaye", "budget", "area", "bhai", "ji",
+  "acha", "accha", "theek", "thik", "ghar", "lena", "lege", "lunga",
+  "dekhna", "dikhao", "paisa", "rupaye", "bhai", "ji",
   "aap", "tum", "mujhe", "mereko", "apna", "kal", "aaj", "abhi", "kab",
 ];
 
