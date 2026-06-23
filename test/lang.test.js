@@ -22,7 +22,21 @@ test("detects Roman Gujarati via hints", () => {
   assert.equal(detectLanguage("mane ghar joiye che ketlo bhav"), "gu");
 });
 
-test("empty input defaults to English", () => {
-  assert.equal(detectLanguage(""), "en");
-  assert.equal(detectLanguage(undefined), "en");
+test("empty or signal-less input is undetermined (caller keeps current lang)", () => {
+  assert.equal(detectLanguage(""), "und");
+  assert.equal(detectLanguage(undefined), "und");
+  // Bare acknowledgements / numbers carry no language signal.
+  assert.equal(detectLanguage("ok"), "und");
+  assert.equal(detectLanguage("ha"), "und");
+  assert.equal(detectLanguage("60 lakh"), "und");
+});
+
+test("short Gujarati/Hinglish replies still detect (not 'und')", () => {
+  assert.equal(detectLanguage("60 lakh sudhi"), "gu");
+  assert.equal(detectLanguage("shanivar barabar"), "gu");
+  assert.equal(detectLanguage("25 hajar tak"), "hinglish");
+});
+
+test("loanwords (visit/book/do) don't force English", () => {
+  assert.equal(detectLanguage("ha visit gothvi do"), "gu");
 });

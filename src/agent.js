@@ -26,8 +26,12 @@ function getClient() {
 // `state` is mutated + persisted as fields are learned. `onHandoff` (optional)
 // is called with the reason so the caller can notify the owner.
 export async function handleMessage(state, userText, { onHandoff } = {}) {
-  // Re-detect language each turn and persist it.
-  state.language = detectLanguage(userText);
+  // Re-detect language each turn, but keep the current one when the message has
+  // no language signal (a bare "ok", "ha", "60 lakh"). Otherwise a short reply
+  // would reset a Gujarati/Hinglish chat back to English mid-flow.
+  const detected = detectLanguage(userText);
+  if (detected !== "und") state.language = detected;
+  if (!state.language) state.language = "en";
 
   appendHistory(state, { role: "user", content: userText });
   saveState(state);
@@ -45,7 +49,7 @@ export async function handleMessage(state, userText, { onHandoff } = {}) {
       messages,
       tools: toolSchemas,
       tool_choice: "auto",
-      temperature: 0.5,
+      temperature: 0.3,
     });
 
     const choice = completion.choices?.[0]?.message;
@@ -111,7 +115,7 @@ export async function handleMessage(state, userText, { onHandoff } = {}) {
         ...state.history,
       ],
       tool_choice: "none",
-      temperature: 0.5,
+      temperature: 0.3,
     });
     const content = completion.choices?.[0]?.message?.content?.trim();
     if (content) {
