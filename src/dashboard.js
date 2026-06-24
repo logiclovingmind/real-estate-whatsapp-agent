@@ -84,13 +84,6 @@ export function computeMetrics(leads = [], now = new Date()) {
   const byLanguage = {};
   const byDay = {};
 
-  // Same breakdowns, but only for leads that actually booked a visit — so the
-  // owner can see what their *booked* pipeline looks like (buy/rent, budget,
-  // area), not just every enquiry.
-  const bookedByIntent = {};
-  const bookedByBudget = {};
-  const bookedByLocality = {};
-
   let newToday = 0;
   let newThisWeek = 0;
   const hotLeads = [];
@@ -99,21 +92,6 @@ export function computeMetrics(leads = [], now = new Date()) {
     const stage = (l.stage || "new").toString().trim().toLowerCase();
     if (byStage[stage] == null) byStage[stage] = 0;
     byStage[stage] += 1;
-
-    // A booking exists when a visit is set (or the stage says so), even if the
-    // stage later drifted.
-    const isBooked = stage === "booked" || Boolean(l.visit_datetime);
-    if (isBooked) {
-      bump(bookedByIntent, l.intent);
-      bump(bookedByBudget, budgetBucket(budgetToCr(l.budget_max)));
-      if (l.area_locality) {
-        String(l.area_locality)
-          .split(/[,/]/)
-          .map((x) => x.trim())
-          .filter(Boolean)
-          .forEach((area) => bump(bookedByLocality, area));
-      }
-    }
 
     bump(byIntent, l.intent);
     bump(byConfig, l.configuration);
@@ -221,12 +199,6 @@ export function computeMetrics(leads = [], now = new Date()) {
       }))
       .sort((a, b) => b._ts - a._ts)
       .map(({ _ts, ...rest }) => rest),
-    bookedBreakdown: {
-      count: booked,
-      intent: toSorted(bookedByIntent),
-      budget: toSorted(bookedByBudget),
-      localities: toSorted(bookedByLocality, 8),
-    },
   };
 }
 
