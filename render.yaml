@@ -17,6 +17,12 @@ services:
     startCommand: npm start
     healthCheckPath: /
     envVars:
+      # Pin Node to an LTS that has prebuilt better-sqlite3 binaries. Render
+      # otherwise defaults to the newest Node, which has no prebuilt binary, so
+      # better-sqlite3 falls back to a source compile that fails (make exit 2).
+      - key: NODE_VERSION
+        value: "22"
+
       # --- Non-secret business defaults (safe to commit) ---
       - key: TIMEZONE
         value: Asia/Kolkata
