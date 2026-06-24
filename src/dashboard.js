@@ -203,6 +203,24 @@ export function computeMetrics(leads = [], now = new Date()) {
     trend,
     upcomingVisits,
     hotLeads: hotLeads.slice(0, 25),
+    // Every inquiry as a row the client can scan: who wants what area, budget,
+    // buy/rent. Most recently active first. Uses the sheet's pre-formatted
+    // budget_display (rent-aware) so rent and buy budgets read correctly.
+    inquiries: leads
+      .map((l) => ({
+        name: l.name || "",
+        phone: l.phone || "",
+        intent: l.intent || "",
+        configuration: l.configuration || "",
+        propertyType: l.property_type || "",
+        area: l.area_locality || "",
+        budget: l.budget_display || "",
+        stage: (l.stage || "new").toString().trim().toLowerCase(),
+        updated: l.last_updated || l.timestamp || "",
+        _ts: (parseSheetDate(l.last_updated) || parseSheetDate(l.timestamp) || new Date(0)).getTime(),
+      }))
+      .sort((a, b) => b._ts - a._ts)
+      .map(({ _ts, ...rest }) => rest),
     bookedBreakdown: {
       count: booked,
       intent: toSorted(bookedByIntent),

@@ -109,6 +109,21 @@
     .bar .bt { background: #eef1f5; border-radius: 7px; height: 22px; overflow: hidden; }
     .bar .bf { height: 100%; border-radius: 7px; background: var(--good); min-width: 2px; }
     .bar .bn { font-size: 13px; font-weight: 600; text-align: right; }
+    .inq-head { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
+    .inq-head input[type="text"], .inq-head select {
+      font: inherit; padding: 8px 11px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); color: var(--text);
+    }
+    .inq-head input[type="text"] { flex: 1; min-width: 180px; }
+    .inq-wrap { overflow-x: auto; }
+    .pill { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+    .pill.new { background: #e8eaed; color: #3c4043; }
+    .pill.qualifying { background: #d2e3fc; color: #174ea6; }
+    .pill.qualified { background: #fef7cd; color: #7a5900; }
+    .pill.booked { background: #ceead6; color: #0d652d; }
+    .pill.lost { background: #fad2cf; color: #a50e0e; }
+    .tag-buy { color: #0d652d; font-weight: 600; }
+    .tag-rent { color: #174ea6; font-weight: 600; }
+    .tag-invest { color: #7a5900; font-weight: 600; }
   </style>
 </head>
 <body>
@@ -155,6 +170,29 @@
         <p class="cap">Qualified, but no visit booked yet</p>
         <div id="hot"></div>
       </div>
+    </section>
+
+    <section class="card" style="margin-top:16px">
+      <h3>All inquiries</h3>
+      <p class="cap">Every customer and what they're looking for</p>
+      <div class="inq-head">
+        <input type="text" id="inq-search" placeholder="Search name, area, phone…" />
+        <select id="inq-intent">
+          <option value="">All — buy & rent</option>
+          <option value="buy">Buy</option>
+          <option value="rent">Rent</option>
+          <option value="invest">Invest</option>
+        </select>
+        <select id="inq-stage">
+          <option value="">All stages</option>
+          <option value="new">New</option>
+          <option value="qualifying">In conversation</option>
+          <option value="qualified">Qualified</option>
+          <option value="booked">Visit booked</option>
+          <option value="lost">Lost</option>
+        </select>
+      </div>
+      <div class="inq-wrap" id="inq-wrap"></div>
     </section>
 
     <section class="card" style="margin-top:16px">
@@ -249,6 +287,46 @@
 
     function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
 
+    let allInquiries = [];
+
+    function intentTag(intent) {
+      const i = String(intent || "").toLowerCase();
+      if (!i) return '<span class="muted">—</span>';
+      const cls = i === "buy" ? "tag-buy" : i === "rent" ? "tag-rent" : i === "invest" ? "tag-invest" : "";
+      return `<span class="${cls}">${esc(i.charAt(0).toUpperCase() + i.slice(1))}</span>`;
+    }
+
+    function renderInquiries() {
+      const q = document.getElementById("inq-search").value.trim().toLowerCase();
+      const fi = document.getElementById("inq-intent").value;
+      const fs = document.getElementById("inq-stage").value;
+      const rows = allInquiries.filter((r) => {
+        if (fi && String(r.intent).toLowerCase() !== fi) return false;
+        if (fs && r.stage !== fs) return false;
+        if (q) {
+          const hay = (r.name + " " + r.area + " " + r.phone + " " + r.configuration).toLowerCase();
+          if (!hay.includes(q)) return false;
+        }
+        return true;
+      });
+      const wrap = document.getElementById("inq-wrap");
+      if (!rows.length) {
+        wrap.innerHTML = '<div class="empty">No inquiries match.</div>';
+        return;
+      }
+      wrap.innerHTML = `<table><thead><tr>
+        <th>Customer</th><th>Looking to</th><th>Area</th><th>Config</th><th>Budget</th><th>Status</th>
+        </tr></thead><tbody>${rows.map((r) => `
+        <tr>
+          <td>${esc(r.name || "—")}<div class="muted">${esc(r.phone)}</div></td>
+          <td>${intentTag(r.intent)}</td>
+          <td>${esc(r.area || "—")}</td>
+          <td>${esc(r.configuration || "—")}</td>
+          <td>${esc(r.budget || "—")}</td>
+          <td><span class="pill ${esc(r.stage)}">${esc(STAGE_LABELS[r.stage] || r.stage)}</span></td>
+        </tr>`).join("")}</tbody></table>`;
+    }
+
     function barList(data) {
       if (!data || !data.length) return '<div class="empty" style="padding:6px 0">No bookings yet.</div>';
       const max = Math.max(1, ...data.map((d) => d.value));
@@ -323,6 +401,9 @@
       document.getElementById("bk-intent").innerHTML = barList(bk.intent);
       document.getElementById("bk-budget").innerHTML = barList(bk.budget);
       document.getElementById("bk-area").innerHTML = barList(bk.localities);
+
+      allInquiries = m.inquiries || [];
+      renderInquiries();
     }
 
     // --- Availability blocks ---
@@ -402,6 +483,10 @@
         availMsg("Could not remove block: " + e.message, "err");
       }
     }
+
+    document.getElementById("inq-search").addEventListener("input", renderInquiries);
+    document.getElementById("inq-intent").addEventListener("change", renderInquiries);
+    document.getElementById("inq-stage").addEventListener("change", renderInquiries);
 
     document.getElementById("b-allday").addEventListener("change", syncAllDay);
     document.getElementById("b-add").addEventListener("click", addBlock);
