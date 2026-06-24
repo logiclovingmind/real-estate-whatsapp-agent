@@ -328,6 +328,19 @@ const handlers = {
   },
 };
 
+// Deterministic safety net: guarantee a lead that has collected info reaches the
+// Sheet even if the model never calls upsert_lead. Called once per turn from the
+// agent loop. Only syncs mid-pipeline stages — new/empty leads have nothing
+// worth a row yet, and booked/handoff/lost write their own rows in their
+// handlers, so re-touching them here would be a wasted Apps Script call.
+export async function flushLeadToSheet(state) {
+  const stage = state?.stage;
+  if (stage !== "qualifying" && stage !== "qualified") {
+    return { ok: false, skipped: true };
+  }
+  return appsscript.upsertLead(leadFromState(state, stage));
+}
+
 export async function runTool(name, args, ctx) {
   const handler = handlers[name];
   if (!handler) return { ok: false, reason: `unknown tool: ${name}` };

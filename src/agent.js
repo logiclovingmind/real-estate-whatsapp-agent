@@ -4,7 +4,7 @@
 import OpenAI from "openai";
 import { buildSystemPrompt } from "./prompts/system.js";
 import { detectLanguage } from "./lang.js";
-import { toolSchemas, runTool } from "./tools.js";
+import { toolSchemas, runTool, flushLeadToSheet } from "./tools.js";
 import { appendHistory, saveState } from "./state.js";
 
 const MODEL = process.env.MODEL || "openai/gpt-4o-mini";
@@ -42,6 +42,21 @@ export async function handleMessage(state, userText, { onHandoff } = {}) {
   saveState(state);
 
   let handoffReason = null;
+  // Track tool activity across rounds so we can deterministically sync the lead
+  // to the Sheet at the end of the turn — the model can't be trusted to call
+  // upsert_lead, so qualified-but-not-booked leads would otherwise never land in
+  // the CRM (and never show up in the dashboard's "Leads to call").
+  let savedField = false;
+  let upsertedThisTurn = false;
+  const flushLead = async () => {
+    if (savedField && !upsertedThisTurn) {
+      try {
+        await flushLeadToSheet(state);
+      } catch {
+        /* CRM sync failure must not break the reply to the lead */
+      }
+    }
+  };
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
     const messages = [
@@ -67,6 +82,7 @@ export async function handleMessage(state, userText, { onHandoff } = {}) {
       const reply = (choice.content || "").trim() || fallbackReply(state.language);
       appendHistory(state, { role: "assistant", content: reply });
       saveState(state);
+      await flushLead();
       return { reply, handoff: Boolean(handoffReason), handoffReason };
     }
 
@@ -88,6 +104,11 @@ export async function handleMessage(state, userText, { onHandoff } = {}) {
       }
 
       const result = await runTool(name, args, { state });
+
+      if (name === "save_field" && result?.ok) savedField = true;
+      if (name === "upsert_lead" || name === "book_appointment") {
+        upsertedThisTurn = true;
+      }
 
       if (name === "handoff_to_human" && result?.handoff) {
         handoffReason = result.reason || "unspecified";
@@ -126,6 +147,7 @@ export async function handleMessage(state, userText, { onHandoff } = {}) {
     if (content) {
       appendHistory(state, { role: "assistant", content });
       saveState(state);
+      await flushLead();
       return { reply: content, handoff: Boolean(handoffReason), handoffReason };
     }
   } catch {
@@ -135,6 +157,7 @@ export async function handleMessage(state, userText, { onHandoff } = {}) {
   const reply = fallbackReply(state.language);
   appendHistory(state, { role: "assistant", content: reply });
   saveState(state);
+  await flushLead();
   return { reply, handoff: Boolean(handoffReason), handoffReason };
 }
 
