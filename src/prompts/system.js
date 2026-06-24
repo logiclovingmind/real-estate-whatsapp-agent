@@ -20,7 +20,7 @@ function workingDaySet(workingDays) {
 // The YYYY-MM-DD / weekday view of "now" in the business timezone, plus the
 // next few open dates the agent may offer. Computed each turn so the model is
 // never guessing what "today"/"tomorrow" mean.
-function dateContext(timezone, workingDays) {
+function dateContext(timezone, workingDays, businessHours, visitDurationMin) {
   const tz = timezone || "Asia/Kolkata";
   const open = workingDaySet(workingDays);
 
@@ -39,6 +39,25 @@ function dateContext(timezone, workingDays) {
     };
   };
 
+  // Current time-of-day in the business timezone, in minutes since midnight.
+  const nowTimeParts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: tz,
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(new Date());
+  const nowH = Number(nowTimeParts.find((p) => p.type === "hour")?.value);
+  const nowMin = (nowH % 24) * 60 + Number(nowTimeParts.find((p) => p.type === "minute")?.value);
+
+  // Today is only offerable if a full visit still fits before closing. Once
+  // now is past (close − visit duration), today has no bookable slot left, so
+  // drop it and let "tomorrow" be the first option (was offering past times).
+  const closeStr = String(businessHours || "10:00-19:00").split("-")[1] || "19:00";
+  const [closeH, closeM] = closeStr.split(":").map(Number);
+  const closeMin = closeH * 60 + (closeM || 0);
+  const duration = Number(visitDurationMin) || 45;
+  const todayClosed = nowMin >= closeMin - duration;
+
   const today = fmtParts(new Date());
   const upcoming = [];
   // Span the next ~week of open dates so the lead can ask for a specific weekday
@@ -47,10 +66,10 @@ function dateContext(timezone, workingDays) {
   for (let i = 0; i < 8 && upcoming.length < 7; i++) {
     const d = new Date(Date.now() + i * 86400000);
     const { iso, weekday } = fmtParts(d);
-    if (open.has(weekday)) {
-      const rel = i === 0 ? "today" : i === 1 ? "tomorrow" : weekday;
-      upcoming.push(`${iso} (${weekday}, ${rel})`);
-    }
+    if (!open.has(weekday)) continue;
+    if (i === 0 && todayClosed) continue; // today's visit window is over
+    const rel = i === 0 ? "today" : i === 1 ? "tomorrow" : weekday;
+    upcoming.push(`${iso} (${weekday}, ${rel})`);
   }
   return { today, upcoming };
 }
@@ -61,7 +80,13 @@ export function buildSystemPrompt(state, language) {
   const workingDays = process.env.WORKING_DAYS || "Mon-Sat";
   const timezone = process.env.TIMEZONE || "Asia/Kolkata";
   const businessContext = (process.env.BUSINESS_CONTEXT || "").trim();
-  const { today, upcoming } = dateContext(timezone, process.env.WORKING_DAYS);
+  const visitDuration = process.env.VISIT_DURATION_MIN;
+  const { today, upcoming } = dateContext(
+    timezone,
+    process.env.WORKING_DAYS,
+    businessHours,
+    visitDuration
+  );
 
   const known = state?.fields || {};
   const knownLines =
