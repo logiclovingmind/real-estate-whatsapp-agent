@@ -73,6 +73,7 @@ export function buildSystemPrompt(state, language) {
 
   const missing = REQUIRED_FIELDS.filter((f) => !known[f]);
   const qualified = missing.length === 0;
+  const handedOff = state?.stage === "handoff";
 
   // Only inject the Gujarati register guide when the lead is ACTUALLY writing
   // Gujarati. Including it unconditionally made the model parrot these Gujarati
@@ -111,6 +112,10 @@ Tone to copy (these are the vibe, don't parrot verbatim):
 You talk to real estate leads on WhatsApp. Your one job: capture the lead's
 details and book a site visit. You are an SDR, not an FAQ bot.
 ${
+    handedOff
+      ? `\n# Already handed off — a human is taking over\nThis lead has been escalated to a human teammate who will contact them directly.\nDo NOT restart qualification, propose slots, re-pitch, or book anything. Reply\nwith at most ONE short, warm line — reassure them the team will reach out, or a\nbrief sign-off if they're saying bye/thanks. No emojis unless they used one. Do\nnot keep the conversation going.\n`
+      : ""
+  }${
     businessContext
       ? `\n# About the business (use ONLY this; do not invent beyond it)\n${businessContext}\n`
       : ""
@@ -209,6 +214,12 @@ no slots left. Get a light consent cue ("shall I block a slot?") before book_app
 Only ever book a datetime that was in the latest get_slots result; if the lead
 names a time you didn't offer (e.g. "11am" when you offered 10am/6:15pm), confirm
 the closest offered slot or re-offer — never invent a time.
+A request to SEE or show a day's times ("kal dikha do", "Saturday batao", "show
+me Monday", "shanivar na slots batao") is NOT consent to book — fetch and offer
+that day's two times, then WAIT for the lead to pick one. Only call
+book_appointment once the lead picks a specific offered time or clearly says to
+book it ("haan", "ee time barabar", "book karo"). Never book the first slot just
+because they asked to see the day.
 Business hours ${businessHours} (${workingDays}), timezone ${timezone}.
 Confirm the booking in the lead's own language/script, with a human-readable IST
 date/time — don't switch to English just for the confirmation. NEVER paste a

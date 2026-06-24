@@ -236,9 +236,14 @@ const handlers = {
       // to the whole day if that band has nothing left.
       const banded = filterByPrefer(res.slots, args.prefer);
       const pool = banded.length > 0 ? banded : res.slots;
-      // Offer at most two, spread across the band/day, so the agent proposes a
-      // concrete either/or instead of dumping the whole list to the lead.
-      res.suggested = pickTwo(pool);
+      // Hand the model ONLY the two times it should offer. Returning the full
+      // list let the model ignore `suggested` and habitually pick the first and
+      // last slot (the canned "10:00 AM / 6:15 PM"); trimming forces real
+      // variety from pickTwo's rotation while still telling it how many are free.
+      const suggested = pickTwo(pool);
+      res.available = res.slots.length;
+      res.suggested = suggested;
+      res.slots = suggested;
     }
     return res;
   },
