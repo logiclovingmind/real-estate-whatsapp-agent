@@ -76,13 +76,19 @@ export const toolSchemas = [
     function: {
       name: "get_slots",
       description:
-        "Get real available site-visit slots for a given date. Call before proposing times.",
+        "Get real available site-visit slots for a given date. Call before proposing times. Pass `prefer` when the lead asks for a part of the day so the suggested times match.",
       parameters: {
         type: "object",
         properties: {
           date: {
             type: "string",
             description: "Date in YYYY-MM-DD (IST). Use today or a near future date.",
+          },
+          prefer: {
+            type: "string",
+            enum: ["morning", "afternoon", "evening", "any"],
+            description:
+              "Time-of-day the lead asked for: morning (<12pm), afternoon (12-4pm), evening (>=4pm), or any. Set this whenever the lead expresses a preference (e.g. 'bapor pachi', 'saanje', 'later') so the two suggested times fall in that band.",
           },
         },
         required: ["date"],
@@ -137,6 +143,28 @@ export const toolSchemas = [
 // Each handler receives (args, ctx) where ctx = { state }. They mutate/persist
 // state as needed and return a compact object for the model.
 
+// Read the hour straight from the IST ISO string (…T10:00:00+05:30) rather than
+// via Date#getHours, which would use the Node process's timezone.
+function hourOf(s) {
+  const m = /T(\d{2}):/.exec(s.start || "");
+  return m ? parseInt(m[1], 10) : 0;
+}
+
+// Narrow slots to the part of the day the lead asked for. Bands: morning <12pm,
+// afternoon 12–4pm, evening >=4pm. "any"/unknown returns everything.
+function filterByPrefer(slots, prefer) {
+  switch (prefer) {
+    case "morning":
+      return slots.filter((s) => hourOf(s) < 12);
+    case "afternoon":
+      return slots.filter((s) => hourOf(s) >= 12 && hourOf(s) < 16);
+    case "evening":
+      return slots.filter((s) => hourOf(s) >= 16);
+    default:
+      return slots;
+  }
+}
+
 // Offer one morning + one afternoon/evening slot so the lead gets a real
 // either/or — but ROTATE which exact times we pick so it doesn't always read as
 // the canned "10:00 AM / 6:15 PM". We split the day's free slots at noon, then
@@ -146,12 +174,6 @@ let _pickCounter = 0;
 function pickTwo(slots) {
   if (slots.length <= 2) return slots.slice();
 
-  // Read the hour straight from the IST ISO string (…T10:00:00+05:30) rather
-  // than via Date#getHours, which would use the Node process's timezone.
-  const hourOf = (s) => {
-    const m = /T(\d{2}):/.exec(s.start || "");
-    return m ? parseInt(m[1], 10) : 0;
-  };
   const morning = slots.filter((s) => hourOf(s) < 12);
   const later = slots.filter((s) => hourOf(s) >= 12);
 
@@ -208,9 +230,15 @@ const handlers = {
     if (!args?.date) return { ok: false, reason: "missing date" };
     const res = await appsscript.getSlots(args.date);
     if (res?.ok && Array.isArray(res.slots) && res.slots.length > 0) {
-      // Offer at most two, spread across the day, so the agent proposes a
+      // Honor a stated time-of-day preference ("bapor pachi", "saanje", …) so
+      // the two suggested times actually fall in the band the lead asked for —
+      // a small model won't reliably filter the full list on its own. Fall back
+      // to the whole day if that band has nothing left.
+      const banded = filterByPrefer(res.slots, args.prefer);
+      const pool = banded.length > 0 ? banded : res.slots;
+      // Offer at most two, spread across the band/day, so the agent proposes a
       // concrete either/or instead of dumping the whole list to the lead.
-      res.suggested = pickTwo(res.slots);
+      res.suggested = pickTwo(pool);
     }
     return res;
   },

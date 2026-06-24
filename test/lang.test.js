@@ -40,3 +40,15 @@ test("short Gujarati/Hinglish replies still detect (not 'und')", () => {
 test("loanwords (visit/book/do) don't force English", () => {
   assert.equal(detectLanguage("ha visit gothvi do"), "gu");
 });
+
+test("locked language doesn't flip on a single ambiguous token", () => {
+  // "hu" is a Gujarati hint but also Hinglish "hoon"; in a locked Hinglish chat
+  // it must NOT switch the conversation to Gujarati.
+  assert.equal(detectLanguage("kal me dupher ke baad me free hi hu", "hinglish"), "hinglish");
+  // A whole message clearly in another language still switches (beats by margin).
+  assert.equal(detectLanguage("mane ghar joiye che ketlo bhav", "hinglish"), "gu");
+  // Without a locked language (first message), detection is unconstrained.
+  assert.equal(detectLanguage("bhai mujhe 2bhk chahiye budget kitna"), "hinglish");
+  // A locked English chat isn't flipped by one stray Hindi word.
+  assert.equal(detectLanguage("ok ghar", "en"), "en");
+});

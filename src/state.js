@@ -19,12 +19,22 @@ db.exec(`
     phone        TEXT PRIMARY KEY,
     stage        TEXT NOT NULL DEFAULT 'new',
     language     TEXT NOT NULL DEFAULT 'en',
+    lang_locked  INTEGER NOT NULL DEFAULT 0,
     fields_json  TEXT NOT NULL DEFAULT '{}',
     history_json TEXT NOT NULL DEFAULT '[]',
     created_at   TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at   TEXT NOT NULL DEFAULT (datetime('now'))
   );
 `);
+
+// Additive migration for DBs created before lang_locked existed.
+const hasLangLocked = db
+  .prepare("PRAGMA table_info(conversations)")
+  .all()
+  .some((c) => c.name === "lang_locked");
+if (!hasLangLocked) {
+  db.exec("ALTER TABLE conversations ADD COLUMN lang_locked INTEGER NOT NULL DEFAULT 0");
+}
 
 const selectStmt = db.prepare("SELECT * FROM conversations WHERE phone = ?");
 const insertStmt = db.prepare(
@@ -34,6 +44,7 @@ const updateStmt = db.prepare(
   `UPDATE conversations
    SET stage = @stage,
        language = @language,
+       lang_locked = @lang_locked,
        fields_json = @fields_json,
        history_json = @history_json,
        updated_at = datetime('now')
@@ -67,6 +78,7 @@ function rowToState(row) {
     phone: row.phone,
     stage: row.stage,
     language: row.language,
+    langLocked: Boolean(row.lang_locked),
     fields: JSON.parse(row.fields_json),
     history: JSON.parse(row.history_json),
     created_at: row.created_at,
@@ -89,6 +101,7 @@ export function saveState(state) {
     phone: state.phone,
     stage: state.stage || "new",
     language: state.language || "en",
+    lang_locked: state.langLocked ? 1 : 0,
     fields_json: JSON.stringify(state.fields || {}),
     history_json: JSON.stringify(history),
   });

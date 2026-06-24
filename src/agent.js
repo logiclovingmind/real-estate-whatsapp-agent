@@ -26,11 +26,16 @@ function getClient() {
 // `state` is mutated + persisted as fields are learned. `onHandoff` (optional)
 // is called with the reason so the caller can notify the owner.
 export async function handleMessage(state, userText, { onHandoff } = {}) {
-  // Re-detect language each turn, but keep the current one when the message has
-  // no language signal (a bare "ok", "ha", "60 lakh"). Otherwise a short reply
-  // would reset a Gujarati/Hinglish chat back to English mid-flow.
-  const detected = detectLanguage(userText);
-  if (detected !== "und") state.language = detected;
+  // Language is LOCKED to the lead's first message that carries a signal. Until
+  // then we detect fresh; once locked we pass the locked language as `current`
+  // so detectLanguage only switches on a clear, full-message signal in another
+  // language — a bare "ok"/"60 lakh" or a single ambiguous token ("hu") can't
+  // reset or flip the conversation.
+  const detected = detectLanguage(userText, state.langLocked ? state.language : undefined);
+  if (detected !== "und") {
+    state.language = detected;
+    state.langLocked = true;
+  }
   if (!state.language) state.language = "en";
 
   appendHistory(state, { role: "user", content: userText });

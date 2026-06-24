@@ -1,9 +1,13 @@
 // Lightweight language/script detection for v1.
 // Returns one of: "gu" (Gujarati script/Roman), "hi" (Devanagari), "hinglish"
 // (Roman Hindi/Hinglish), "en" (English), or "und" (undetermined — no language
-// signal at all, e.g. a bare "ok" or "60 lakh"). The caller treats "und" as
-// "keep the language already in use" so short/neutral replies don't reset a
-// Gujarati/Hinglish conversation back to English mid-flow.
+// signal at all, e.g. a bare "ok" or "60 lakh").
+//
+// Session lock: the caller locks the language on the lead's first message that
+// carries a signal, then passes that locked language back as `current` on every
+// later turn. Once locked, we only switch when ANOTHER language wins by a clear
+// margin (a whole message in that language) — a single ambiguous token (e.g.
+// "hu", Gujarati "I" but also Hinglish "hoon") will NOT flip an established chat.
 
 const GUJARATI_RANGE = /[\u0A80-\u0AFF]/;
 const DEVANAGARI_RANGE = /[\u0900-\u097F]/;
@@ -43,6 +47,11 @@ const ENGLISH_HINTS = [
   "available", "interested", "morning", "evening", "works", "fine",
 ];
 
+// How much stronger another language must score than the locked one before we
+// switch the conversation. A margin of 2 means a single shared/ambiguous token
+// can't flip the chat, but a whole message in another language will.
+const SWITCH_MARGIN = 2;
+
 function countHits(text, words) {
   const tokens = text.toLowerCase().split(/[^a-z]+/).filter(Boolean);
   if (tokens.length === 0) return 0;
@@ -52,10 +61,11 @@ function countHits(text, words) {
   return hits;
 }
 
-export function detectLanguage(text = "") {
+export function detectLanguage(text = "", current) {
   const t = String(text).trim();
   if (!t) return "und";
 
+  // Actual script is definitive — always wins over any romanized heuristic.
   if (GUJARATI_RANGE.test(t)) return "gu";
   if (DEVANAGARI_RANGE.test(t)) return "hi";
 
@@ -66,11 +76,29 @@ export function detectLanguage(text = "") {
   // No evidence in any language — let the caller keep the current language.
   if (guHits === 0 && hiHits === 0 && enHits === 0) return "und";
 
-  // Pick the strongest signal. Roman Gujarati and Hinglish share many tokens,
-  // so ties between them lean Gujarati (this is an Ahmedabad business).
-  if (guHits >= hiHits && guHits >= enHits && guHits > 0) return "gu";
-  if (hiHits >= enHits && hiHits > 0) return "hinglish";
-  return "en";
+  // Strongest signal. Roman Gujarati and Hinglish share many tokens, so ties
+  // between them lean Gujarati (this is an Ahmedabad business).
+  let winner, winnerHits;
+  if (guHits >= hiHits && guHits >= enHits && guHits > 0) {
+    winner = "gu";
+    winnerHits = guHits;
+  } else if (hiHits >= enHits && hiHits > 0) {
+    winner = "hinglish";
+    winnerHits = hiHits;
+  } else {
+    winner = "en";
+    winnerHits = enHits;
+  }
+
+  // Session lock: if a language is already established, keep it unless another
+  // beats it by SWITCH_MARGIN. Devanagari "hi" is compared via its Roman score.
+  const curLabel = current === "hi" ? "hinglish" : current;
+  const curHits =
+    curLabel === "gu" ? guHits : curLabel === "hinglish" ? hiHits : curLabel === "en" ? enHits : -1;
+  if (curHits >= 0 && winner !== curLabel && winnerHits - curHits < SWITCH_MARGIN) {
+    return curLabel;
+  }
+  return winner;
 }
 
 // Human-readable label for the system prompt.

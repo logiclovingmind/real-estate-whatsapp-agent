@@ -16,7 +16,12 @@ import {
 } from "./whatsapp.js";
 import { getState, saveState } from "./state.js";
 import { handleMessage } from "./agent.js";
-import { getDashboardData } from "./appsscript.js";
+import {
+  getDashboardData,
+  blockTime,
+  listBlocks,
+  removeBlock,
+} from "./appsscript.js";
 import { computeMetrics } from "./dashboard.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -78,6 +83,51 @@ app.get("/api/dashboard", dashboardAuth, async (_req, res) => {
     generatedAt: new Date().toISOString(),
     metrics,
   });
+});
+
+// --- Availability blocks (owner-only, same Basic Auth) ---
+// One-off blocks: mark the owner unavailable so the agent stops offering those
+// slots. Backed by Calendar block events; never an agent tool.
+
+app.get("/api/availability", dashboardAuth, async (_req, res) => {
+  const data = await listBlocks(30);
+  if (!data.ok) {
+    return res.status(502).json({ ok: false, reason: data.reason || "fetch failed" });
+  }
+  res.json({ ok: true, blocks: data.blocks || [] });
+});
+
+app.post("/api/availability", dashboardAuth, async (req, res) => {
+  const date = String(req.body?.date || "").trim();
+  const allDay = Boolean(req.body?.allDay);
+  const start = String(req.body?.start || "").trim();
+  const end = String(req.body?.end || "").trim();
+  const reason = String(req.body?.reason || "").trim();
+  if (!date) {
+    return res.status(400).json({ ok: false, reason: "date is required" });
+  }
+  if (!allDay && (!start || !end)) {
+    return res
+      .status(400)
+      .json({ ok: false, reason: "start and end time are required unless all-day" });
+  }
+  const data = await blockTime({ date, allDay, start, end, reason });
+  if (!data.ok) {
+    return res.status(502).json({ ok: false, reason: data.reason || "block failed" });
+  }
+  res.json(data);
+});
+
+app.delete("/api/availability", dashboardAuth, async (req, res) => {
+  const id = String(req.query?.id || "").trim();
+  if (!id) {
+    return res.status(400).json({ ok: false, reason: "id is required" });
+  }
+  const data = await removeBlock(id);
+  if (!data.ok) {
+    return res.status(502).json({ ok: false, reason: data.reason || "remove failed" });
+  }
+  res.json(data);
 });
 
 // --- Agent test console (same Basic Auth as the dashboard) ---

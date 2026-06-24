@@ -40,6 +40,11 @@ var TZ = prop("TIMEZONE");
 
 var SHEET_NAME = "Leads";
 
+// Title prefix for owner availability blocks. getSlots already excludes any
+// overlapping Calendar event, so a block event simply removes those slots. The
+// prefix lets us list/remove only blocks (never real bookings) safely.
+var BLOCK_PREFIX = "[BLOCKED]";
+
 // The single source of truth for the sheet layout. `key` is the machine name
 // the Node code/agent uses; `label` is the human header the owner sees; columns
 // are laid out left-to-right in THIS order, most useful first. `hidden` columns
@@ -82,7 +87,7 @@ function prop(key, fallback) {
 }
 
 function doGet() {
-  return json({ ok: true, service: "real-estate-agent", status: "healthy", version: "v11-rentbudget" });
+  return json({ ok: true, service: "real-estate-agent", status: "healthy", version: "v12-blocks" });
 }
 
 function doPost(e) {
@@ -116,6 +121,12 @@ function doPost(e) {
         return json(formatSheetAction());
       case "reset_sheet":
         return json(resetSheet());
+      case "block_time":
+        return json(blockTime(body.block || {}));
+      case "list_blocks":
+        return json(listBlocks(body.days));
+      case "remove_block":
+        return json(removeBlock(body.id));
       default:
         return json({ ok: false, reason: "unknown action: " + body.action });
     }
@@ -619,4 +630,100 @@ function cancelAppointment(booking) {
 
   clearLeadVisit(booking.phone);
   return { ok: true, cancelled: true };
+}
+
+/* ---------------- Availability blocks (ADMIN ONLY) ---------------- */
+
+// ADMIN ONLY. Mark the owner unavailable by creating a Calendar block event.
+// Because getSlots excludes overlapping events, this removes the blocked slots
+// from what the agent offers. One-off blocks only (no recurrence for now).
+//   block.date  "yyyy-MM-dd"   (required)
+//   block.allDay bool          (whole day off)
+//   block.start "HH:mm"        (required unless allDay)
+//   block.end   "HH:mm"        (required unless allDay)
+//   block.reason string        (optional, shown in the event title)
+function blockTime(block) {
+  if (!block.date) return { ok: false, reason: "missing date" };
+  var parts = String(block.date).split("-");
+  if (parts.length !== 3) return { ok: false, reason: "bad date (want yyyy-MM-dd)" };
+  var y = parseInt(parts[0], 10), mo = parseInt(parts[1], 10) - 1, d = parseInt(parts[2], 10);
+
+  var cal = getCalendar();
+  var reason = block.reason ? String(block.reason).trim() : "";
+  var title = reason ? BLOCK_PREFIX + " " + reason : BLOCK_PREFIX;
+
+  var event;
+  if (block.allDay) {
+    event = cal.createAllDayEvent(title, new Date(y, mo, d));
+  } else {
+    if (!block.start || !block.end) {
+      return { ok: false, reason: "missing start/end time" };
+    }
+    var s = String(block.start).split(":"), e = String(block.end).split(":");
+    var start = new Date(y, mo, d, parseInt(s[0], 10), parseInt(s[1] || 0, 10), 0);
+    var end = new Date(y, mo, d, parseInt(e[0], 10), parseInt(e[1] || 0, 10), 0);
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+      return { ok: false, reason: "invalid time" };
+    }
+    if (end.getTime() <= start.getTime()) {
+      return { ok: false, reason: "end must be after start" };
+    }
+    event = cal.createEvent(title, start, end);
+  }
+
+  return { ok: true, id: event.getId(), label: blockLabel(event) };
+}
+
+// ADMIN ONLY. List upcoming availability blocks within the next `days` days
+// (default 30), most useful first.
+function listBlocks(days) {
+  var n = parseInt(days, 10);
+  if (isNaN(n) || n <= 0) n = 30;
+  var cal = getCalendar();
+  var from = new Date();
+  var to = new Date(from.getTime() + n * 24 * 60 * 60000);
+  var events = cal.getEvents(from, to);
+  var out = [];
+  for (var i = 0; i < events.length; i++) {
+    var ev = events[i];
+    if (ev.getTitle().indexOf(BLOCK_PREFIX) !== 0) continue;
+    var allDay = ev.isAllDayEvent();
+    out.push({
+      id: ev.getId(),
+      allDay: allDay,
+      reason: ev.getTitle().slice(BLOCK_PREFIX.length).trim(),
+      start: Utilities.formatDate(ev.getStartTime(), TZ, "yyyy-MM-dd'T'HH:mm:ssXXX"),
+      end: Utilities.formatDate(ev.getEndTime(), TZ, "yyyy-MM-dd'T'HH:mm:ssXXX"),
+      label: blockLabel(ev),
+    });
+  }
+  return { ok: true, blocks: out };
+}
+
+// ADMIN ONLY. Delete a block by event id. Verifies the BLOCK_PREFIX first so a
+// real site-visit event can never be removed through this path.
+function removeBlock(id) {
+  if (!id) return { ok: false, reason: "missing id" };
+  var cal = getCalendar();
+  var ev;
+  try {
+    ev = cal.getEventById(String(id));
+  } catch (e) {
+    return { ok: false, reason: "event not found" };
+  }
+  if (!ev) return { ok: false, reason: "event not found" };
+  if (ev.getTitle().indexOf(BLOCK_PREFIX) !== 0) {
+    return { ok: false, reason: "not a block event" };
+  }
+  ev.deleteEvent();
+  return { ok: true, removed: true };
+}
+
+// Human-readable label for a block event (used in the dashboard list).
+function blockLabel(ev) {
+  if (ev.isAllDayEvent()) {
+    return Utilities.formatDate(ev.getAllDayStartDate(), TZ, "EEE d MMM") + " — all day";
+  }
+  return Utilities.formatDate(ev.getStartTime(), TZ, "EEE d MMM, h:mm a") +
+    " – " + Utilities.formatDate(ev.getEndTime(), TZ, "h:mm a");
 }

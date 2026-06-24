@@ -78,6 +78,22 @@ export function resetSheet() {
   return call("reset_sheet");
 }
 
+// Admin only — mark the owner unavailable by creating a Calendar block event.
+// getSlots excludes overlapping events, so this removes the blocked slots.
+export function blockTime(block) {
+  return call("block_time", { block });
+}
+
+// Admin only — list upcoming availability blocks within `days` (default 30).
+export function listBlocks(days = 30) {
+  return call("list_blocks", { days });
+}
+
+// Admin only — remove a block by its Calendar event id.
+export function removeBlock(id) {
+  return call("remove_block", { id });
+}
+
 export default {
   upsertLead,
   getSlots,
@@ -87,5 +103,8 @@ export default {
   deleteLead,
   formatSheet,
   resetSheet,
+  blockTime,
+  listBlocks,
+  removeBlock,
   call,
 };
