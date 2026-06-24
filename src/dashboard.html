@@ -100,6 +100,15 @@
     .convo-head .h-name { font-weight: 600; }
     .convo-head .h-phone { color: var(--muted); font-size: 13px; }
     .convo-pane { display: flex; flex-direction: column; min-width: 0; }
+    .three { grid-template-columns: 1fr 1fr 1fr; margin-top: 16px; }
+    @media (max-width: 760px) { .three { grid-template-columns: 1fr; } }
+    .sub-h { font-size: 13px; font-weight: 600; color: var(--muted); margin: 0 0 12px; text-transform: uppercase; letter-spacing: .4px; }
+    .bars { display: flex; flex-direction: column; gap: 10px; }
+    .bar { display: grid; grid-template-columns: 96px 1fr 30px; align-items: center; gap: 10px; }
+    .bar .bl { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .bar .bt { background: #eef1f5; border-radius: 7px; height: 22px; overflow: hidden; }
+    .bar .bf { height: 100%; border-radius: 7px; background: var(--good); min-width: 2px; }
+    .bar .bn { font-size: 13px; font-weight: 600; text-align: right; }
   </style>
 </head>
 <body>
@@ -145,6 +154,25 @@
         <h3>Leads to call</h3>
         <p class="cap">Qualified, but no visit booked yet</p>
         <div id="hot"></div>
+      </div>
+    </section>
+
+    <section class="card" style="margin-top:16px">
+      <h3>Booked visits — what they want</h3>
+      <p class="cap" id="booked-cap">Buy/rent, budget and area of leads who booked a site visit</p>
+      <div class="row three">
+        <div>
+          <p class="sub-h">Buy vs Rent</p>
+          <div class="bars" id="bk-intent"></div>
+        </div>
+        <div>
+          <p class="sub-h">Budget</p>
+          <div class="bars" id="bk-budget"></div>
+        </div>
+        <div>
+          <p class="sub-h">Area</p>
+          <div class="bars" id="bk-area"></div>
+        </div>
       </div>
     </section>
 
@@ -221,6 +249,17 @@
 
     function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
 
+    function barList(data) {
+      if (!data || !data.length) return '<div class="empty" style="padding:6px 0">No bookings yet.</div>';
+      const max = Math.max(1, ...data.map((d) => d.value));
+      return data.map((d) => `
+        <div class="bar">
+          <div class="bl" title="${esc(d.label)}">${esc(d.label)}</div>
+          <div class="bt"><div class="bf" style="width:${(d.value / max) * 100}%"></div></div>
+          <div class="bn">${d.value}</div>
+        </div>`).join("");
+    }
+
     function pipeline(funnel) {
       const max = Math.max(1, ...funnel.map((f) => f.value));
       return funnel.map((f) => `
@@ -276,6 +315,14 @@
       hbar("areas", m.localities.slice(0, 5));
       document.getElementById("upcoming").innerHTML = visitsTable(m.upcomingVisits.slice(0, 8));
       document.getElementById("hot").innerHTML = hotTable(m.hotLeads.slice(0, 8));
+
+      const bk = m.bookedBreakdown || { count: 0, intent: [], budget: [], localities: [] };
+      document.getElementById("booked-cap").textContent =
+        bk.count ? `Buy/rent, budget and area across ${bk.count} booked visit${bk.count === 1 ? "" : "s"}`
+                 : "No site visits booked yet";
+      document.getElementById("bk-intent").innerHTML = barList(bk.intent);
+      document.getElementById("bk-budget").innerHTML = barList(bk.budget);
+      document.getElementById("bk-area").innerHTML = barList(bk.localities);
     }
 
     // --- Availability blocks ---
