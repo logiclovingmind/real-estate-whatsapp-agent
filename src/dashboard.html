@@ -33,6 +33,8 @@
       padding: 9px 16px; border-radius: 10px; cursor: pointer; font-size: 14px;
     }
     button:hover { border-color: var(--accent); color: var(--accent); }
+    button.on { background: var(--good); color: #fff; border-color: var(--good); }
+    button.on:hover { color: #fff; opacity: 0.92; }
     main { padding: 0 32px 64px; max-width: 1100px; margin: 0 auto; }
     .row { display: grid; gap: 16px; }
     .kpis { grid-template-columns: repeat(4, 1fr); margin-bottom: 28px; }
@@ -123,7 +125,10 @@
       <h1 id="title">Leads Dashboard</h1>
       <div class="sub" id="updated">Loading…</div>
     </div>
-    <button id="refresh">Refresh</button>
+    <div style="display:flex; gap:10px; align-items:center;">
+      <button id="keepawake" title="Pings the server every 10 min so it never sleeps during a demo">Keep awake: Off</button>
+      <button id="refresh">Refresh</button>
+    </div>
   </header>
 
   <main>
@@ -518,6 +523,27 @@
     document.getElementById("refresh").addEventListener("click", () => {
       load(); loadBlocks(); loadConvos(); if (activePhone) openConvo(activePhone);
     });
+
+    // --- Keep awake: ping the server every 10 min so Render's free tier
+    // doesn't spin down (it sleeps after ~15 min idle). On by default. ---
+    let awakeTimer = null;
+    const KEEP_AWAKE_MS = 10 * 60 * 1000;
+    function ping() { fetch("/", { cache: "no-store" }).catch(() => {}); }
+    function setKeepAwake(on) {
+      const btn = document.getElementById("keepawake");
+      if (on) {
+        if (!awakeTimer) awakeTimer = setInterval(ping, KEEP_AWAKE_MS);
+        ping();
+        btn.textContent = "Keep awake: On";
+        btn.classList.add("on");
+      } else {
+        clearInterval(awakeTimer); awakeTimer = null;
+        btn.textContent = "Keep awake: Off";
+        btn.classList.remove("on");
+      }
+    }
+    document.getElementById("keepawake").addEventListener("click", () => setKeepAwake(!awakeTimer));
+    setKeepAwake(true);
     load();
     loadBlocks();
     loadConvos();
