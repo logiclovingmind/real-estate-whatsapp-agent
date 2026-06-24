@@ -14,7 +14,7 @@ import {
   sendText,
   stripMarkdown,
 } from "./whatsapp.js";
-import { getState, saveState } from "./state.js";
+import { getState, saveState, listConversations, getConversation } from "./state.js";
 import { handleMessage } from "./agent.js";
 import {
   getDashboardData,
@@ -128,6 +128,20 @@ app.delete("/api/availability", dashboardAuth, async (req, res) => {
     return res.status(502).json({ ok: false, reason: data.reason || "remove failed" });
   }
   res.json(data);
+});
+
+// --- Lead conversations (owner-only, same Basic Auth) ---
+// Read-only view of the WhatsApp chat history (from SQLite) so the owner can
+// see what each lead actually said. Only user/assistant text turns are shown.
+
+app.get("/api/conversations", dashboardAuth, (_req, res) => {
+  res.json({ ok: true, conversations: listConversations() });
+});
+
+app.get("/api/conversations/:phone", dashboardAuth, (req, res) => {
+  const convo = getConversation(req.params.phone);
+  if (!convo) return res.status(404).json({ ok: false, reason: "no conversation for this phone" });
+  res.json({ ok: true, conversation: convo });
 });
 
 // --- Agent test console (same Basic Auth as the dashboard) ---

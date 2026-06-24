@@ -107,6 +107,56 @@ export function saveState(state) {
   });
 }
 
+// Keep only the user/assistant text turns — drop tool calls and tool results,
+// which are plumbing the owner shouldn't see in a chat transcript.
+function visibleTurns(history) {
+  return (history || []).filter(
+    (m) => (m.role === "user" || m.role === "assistant") && m.content && String(m.content).trim()
+  );
+}
+
+const listStmt = db.prepare(
+  `SELECT phone, stage, fields_json, history_json, updated_at
+   FROM conversations ORDER BY updated_at DESC`
+);
+
+// All conversations as lightweight rows for the dashboard list (no full
+// history) — name (if learned), stage, last message snippet, message count.
+export function listConversations() {
+  return listStmt.all().map((row) => {
+    const fields = JSON.parse(row.fields_json);
+    const turns = visibleTurns(JSON.parse(row.history_json));
+    const last = turns[turns.length - 1];
+    return {
+      phone: row.phone,
+      name: fields.name || "",
+      stage: row.stage,
+      lastMessage: last ? String(last.content) : "",
+      lastRole: last ? last.role : "",
+      messageCount: turns.length,
+      updatedAt: row.updated_at,
+    };
+  });
+}
+
+// One conversation's full visible transcript for the dashboard chat view.
+export function getConversation(phone) {
+  const row = selectStmt.get(phone);
+  if (!row) return null;
+  const fields = JSON.parse(row.fields_json);
+  return {
+    phone: row.phone,
+    name: fields.name || "",
+    stage: row.stage,
+    language: row.language,
+    messages: visibleTurns(JSON.parse(row.history_json)).map((m) => ({
+      role: m.role,
+      content: String(m.content),
+    })),
+    updatedAt: row.updated_at,
+  };
+}
+
 // Merge a single learned field into state.fields (used by save_field tool).
 export function setField(state, key, value) {
   state.fields = { ...state.fields, [key]: value };

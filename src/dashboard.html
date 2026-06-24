@@ -80,6 +80,26 @@
     .block-list .reason { color: var(--muted); }
     .block-list button { padding: 5px 12px; font-size: 13px; }
     .block-list button:hover { border-color: #b91c1c; color: #b91c1c; }
+    .chat-grid { display: grid; grid-template-columns: 280px 1fr; gap: 0; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; min-height: 420px; }
+    @media (max-width: 760px) { .chat-grid { grid-template-columns: 1fr; } }
+    .convo-list { border-right: 1px solid var(--line); overflow-y: auto; max-height: 520px; }
+    @media (max-width: 760px) { .convo-list { max-height: 240px; } }
+    .convo-item { padding: 12px 14px; border-bottom: 1px solid var(--line); cursor: pointer; }
+    .convo-item:hover { background: #f6f7f9; }
+    .convo-item.active { background: #eef4ff; }
+    .convo-item .ci-top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+    .convo-item .ci-name { font-weight: 600; font-size: 14px; }
+    .convo-item .ci-time { color: var(--muted); font-size: 11px; white-space: nowrap; }
+    .convo-item .ci-last { color: var(--muted); font-size: 13px; margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .transcript { padding: 18px; overflow-y: auto; max-height: 520px; background: #fafbfc; }
+    .transcript .ph { color: var(--muted); text-align: center; padding-top: 60px; }
+    .bubble { max-width: 76%; padding: 9px 13px; border-radius: 14px; margin-bottom: 10px; font-size: 14px; line-height: 1.45; white-space: pre-wrap; word-wrap: break-word; }
+    .bubble.user { background: #fff; border: 1px solid var(--line); border-bottom-left-radius: 4px; margin-right: auto; }
+    .bubble.assistant { background: #d9fdd3; border-bottom-right-radius: 4px; margin-left: auto; }
+    .convo-head { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--line); background: var(--card); }
+    .convo-head .h-name { font-weight: 600; }
+    .convo-head .h-phone { color: var(--muted); font-size: 13px; }
+    .convo-pane { display: flex; flex-direction: column; min-width: 0; }
   </style>
 </head>
 <body>
@@ -141,6 +161,20 @@
       </div>
       <p id="avail-msg"></p>
       <ul class="block-list" id="blocks"></ul>
+    </section>
+
+    <section class="card" style="margin-top:16px">
+      <h3>Conversations</h3>
+      <p class="cap">WhatsApp chats with your leads</p>
+      <div class="chat-grid">
+        <div class="convo-list" id="convo-list"></div>
+        <div class="convo-pane">
+          <div class="convo-head" id="convo-head" style="display:none">
+            <div><span class="h-name" id="h-name"></span> <span class="h-phone" id="h-phone"></span></div>
+          </div>
+          <div class="transcript" id="transcript"><div class="ph">Select a lead to see the chat.</div></div>
+        </div>
+      </div>
     </section>
   </main>
 
@@ -325,9 +359,83 @@
     document.getElementById("b-allday").addEventListener("change", syncAllDay);
     document.getElementById("b-add").addEventListener("click", addBlock);
 
-    document.getElementById("refresh").addEventListener("click", () => { load(); loadBlocks(); });
+    // --- Conversations ---
+    let activePhone = null;
+
+    function relTime(s) {
+      if (!s) return "";
+      const d = new Date(s.replace(" ", "T"));
+      if (isNaN(d)) return "";
+      const mins = Math.round((Date.now() - d.getTime()) / 60000);
+      if (mins < 1) return "now";
+      if (mins < 60) return mins + "m";
+      if (mins < 1440) return Math.round(mins / 60) + "h";
+      return Math.round(mins / 1440) + "d";
+    }
+
+    function renderConvoList(list) {
+      const el = document.getElementById("convo-list");
+      if (!list.length) {
+        el.innerHTML = '<div class="empty" style="padding:18px 14px">No conversations yet.</div>';
+        return;
+      }
+      el.innerHTML = list.map((c) => {
+        const who = c.name || c.phone;
+        const prefix = c.lastRole === "assistant" ? "You: " : "";
+        return `<div class="convo-item${c.phone === activePhone ? " active" : ""}" data-phone="${esc(c.phone)}">
+          <div class="ci-top"><span class="ci-name">${esc(who)}</span><span class="ci-time">${esc(relTime(c.updatedAt))}</span></div>
+          <div class="ci-last">${esc(prefix + (c.lastMessage || "—"))}</div>
+        </div>`;
+      }).join("");
+      el.querySelectorAll(".convo-item").forEach((item) => {
+        item.addEventListener("click", () => openConvo(item.getAttribute("data-phone")));
+      });
+    }
+
+    async function loadConvos() {
+      try {
+        const res = await fetch("/api/conversations", { headers: { Accept: "application/json" } });
+        const body = await res.json();
+        if (!body.ok) throw new Error(body.reason || "failed");
+        renderConvoList(body.conversations || []);
+      } catch (e) {
+        document.getElementById("convo-list").innerHTML =
+          '<div class="empty" style="padding:18px 14px">Could not load: ' + esc(e.message) + "</div>";
+      }
+    }
+
+    async function openConvo(phone) {
+      activePhone = phone;
+      document.querySelectorAll(".convo-item").forEach((i) =>
+        i.classList.toggle("active", i.getAttribute("data-phone") === phone));
+      const t = document.getElementById("transcript");
+      t.innerHTML = '<div class="ph">Loading…</div>';
+      try {
+        const res = await fetch("/api/conversations/" + encodeURIComponent(phone), { headers: { Accept: "application/json" } });
+        const body = await res.json();
+        if (!body.ok) throw new Error(body.reason || "failed");
+        const c = body.conversation;
+        document.getElementById("convo-head").style.display = "flex";
+        document.getElementById("h-name").textContent = c.name || "Lead";
+        document.getElementById("h-phone").textContent = c.phone;
+        if (!c.messages.length) {
+          t.innerHTML = '<div class="ph">No messages yet.</div>';
+          return;
+        }
+        t.innerHTML = c.messages.map((m) =>
+          `<div class="bubble ${m.role === "user" ? "user" : "assistant"}">${esc(m.content)}</div>`).join("");
+        t.scrollTop = t.scrollHeight;
+      } catch (e) {
+        t.innerHTML = '<div class="ph">Could not load chat: ' + esc(e.message) + "</div>";
+      }
+    }
+
+    document.getElementById("refresh").addEventListener("click", () => {
+      load(); loadBlocks(); loadConvos(); if (activePhone) openConvo(activePhone);
+    });
     load();
     loadBlocks();
+    loadConvos();
   </script>
 </body>
 </html>
