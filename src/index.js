@@ -114,6 +114,11 @@ async function notifyOwner(reason, state) {
 
 app.listen(PORT, () => {
   console.log(`Real estate WhatsApp agent listening on :${PORT}`);
+  // Keep Render free tier awake: ping own health endpoint every 10 min.
+  if (process.env.NODE_ENV === "production" && process.env.RENDER_EXTERNAL_URL) {
+    const url = process.env.RENDER_EXTERNAL_URL.replace(/\/$/, "") + "/";
+    setInterval(() => fetch(url).catch(() => {}), 10 * 60 * 1000);
+  }
 });
 
 export default app;
