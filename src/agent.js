@@ -3,8 +3,8 @@
 
 import OpenAI from "openai";
 import { buildSystemPrompt } from "./prompts/system.js";
-import { detectLanguage } from "./lang.js";
-import { toolSchemas, runTool, flushLeadToSheet } from "./tools.js";
+import { toolSchemas, runTool } from "./tools.js";
+import { syncLead as syncLeadToCrm } from "./crm.js";
 import { appendHistory, saveState } from "./state.js";
 
 const MODEL = process.env.MODEL || "openai/gpt-4o-mini";
@@ -26,35 +26,18 @@ function getClient() {
 // `state` is mutated + persisted as fields are learned. `onHandoff` (optional)
 // is called with the reason so the caller can notify the owner.
 export async function handleMessage(state, userText, { onHandoff } = {}) {
-  // Language is LOCKED to the lead's first message that carries a signal. Until
-  // then we detect fresh; once locked we pass the locked language as `current`
-  // so detectLanguage only switches on a clear, full-message signal in another
-  // language — a bare "ok"/"60 lakh" or a single ambiguous token ("hu") can't
-  // reset or flip the conversation.
-  const detected = detectLanguage(userText, state.langLocked ? state.language : undefined);
-  if (detected !== "und") {
-    state.language = detected;
-    state.langLocked = true;
-  }
-  if (!state.language) state.language = "en";
-
+  state.language = "en";
   appendHistory(state, { role: "user", content: userText });
   saveState(state);
 
   let handoffReason = null;
-  // Track tool activity across rounds so we can deterministically sync the lead
-  // to the Sheet at the end of the turn — the model can't be trusted to call
-  // upsert_lead, so qualified-but-not-booked leads would otherwise never land in
-  // the CRM (and never show up in the dashboard's "Leads to call").
-  let savedField = false;
-  let upsertedThisTurn = false;
+  // Push to CRM once per turn — hash-guarded internally, so only hits the
+  // network when the lead payload actually changed.
   const flushLead = async () => {
-    if (savedField && !upsertedThisTurn) {
-      try {
-        await flushLeadToSheet(state);
-      } catch {
-        /* CRM sync failure must not break the reply to the lead */
-      }
+    try {
+      await syncLeadToCrm(state);
+    } catch {
+      /* CRM sync failure must not break the reply to the lead */
     }
   };
 
@@ -104,11 +87,6 @@ export async function handleMessage(state, userText, { onHandoff } = {}) {
       }
 
       const result = await runTool(name, args, { state });
-
-      if (name === "save_field" && result?.ok) savedField = true;
-      if (name === "upsert_lead" || name === "book_appointment") {
-        upsertedThisTurn = true;
-      }
 
       if (name === "handoff_to_human" && result?.handoff) {
         handoffReason = result.reason || "unspecified";

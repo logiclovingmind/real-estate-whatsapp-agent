@@ -220,10 +220,8 @@ const handlers = {
   async upsert_lead(args, { state }) {
     if (args?.stage) state.stage = args.stage;
     else deriveStage(state);
-    const lead = leadFromState(state, state.stage);
-    const res = await appsscript.upsertLead(lead);
     saveState(state);
-    return res?.ok ? { ok: true } : res;
+    return { ok: true };
   },
 
   async get_slots(args, { state }) {
@@ -270,13 +268,6 @@ const handlers = {
           "lead already has a visit booked; call cancel_appointment first to reschedule, then book the new time.",
       };
     }
-
-    // Ensure the CRM row exists BEFORE booking. The Apps Script booking only
-    // patches an existing row, so booking without a prior upsert_lead would
-    // create a Calendar event with no Sheet record. Upserting here guarantees
-    // every booked visit has a lead row.
-    const lead = leadFromState(state, "booked");
-    await appsscript.upsertLead(lead);
 
     const booking = {
       phone: state.phone,
@@ -328,17 +319,9 @@ const handlers = {
   },
 };
 
-// Deterministic safety net: guarantee a lead that has collected info reaches the
-// Sheet even if the model never calls upsert_lead. Called once per turn from the
-// agent loop. Only syncs mid-pipeline stages — new/empty leads have nothing
-// worth a row yet, and booked/handoff/lost write their own rows in their
-// handlers, so re-touching them here would be a wasted Apps Script call.
-export async function flushLeadToSheet(state) {
-  const stage = state?.stage;
-  if (stage !== "qualifying" && stage !== "qualified") {
-    return { ok: false, skipped: true };
-  }
-  return appsscript.upsertLead(leadFromState(state, stage));
+// Kept for backwards compatibility; lead storage is now handled by crm.js.
+export async function flushLeadToSheet() {
+  return { ok: true, skipped: true };
 }
 
 export async function runTool(name, args, ctx) {

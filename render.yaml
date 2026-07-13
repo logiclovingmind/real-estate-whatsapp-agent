@@ -17,9 +17,7 @@ services:
     startCommand: npm start
     healthCheckPath: /
     envVars:
-      # Pin Node to an LTS that has prebuilt better-sqlite3 binaries. Render
-      # otherwise defaults to the newest Node, which has no prebuilt binary, so
-      # better-sqlite3 falls back to a source compile that fails (make exit 2).
+      # Pin Node to an LTS that has prebuilt better-sqlite3 binaries.
       - key: NODE_VERSION
         value: "22"
 
@@ -39,18 +37,12 @@ services:
       - key: MODEL
         value: openai/gpt-4o-mini
 
-      # --- Per-client business details (set in dashboard) ---
+      # --- Per-client business details (set in Render dashboard) ---
       - key: BUSINESS_NAME
         sync: false
       - key: BUSINESS_CONTEXT
         sync: false
       - key: HUMAN_HANDOFF_NUMBER
-        sync: false
-
-      # --- Dashboard login ---
-      - key: DASHBOARD_USER
-        sync: false
-      - key: DASHBOARD_PASS
         sync: false
 
       # --- WhatsApp Cloud API ---
@@ -63,16 +55,18 @@ services:
       - key: WHATSAPP_APP_SECRET
         sync: false
 
-      # --- Google (Sheet + Calendar via Apps Script) ---
-      - key: GOOGLE_SHEET_ID
-        sync: false
-      - key: GOOGLE_CALENDAR_ID
-        sync: false
+      # --- Apps Script (Calendar) ---
       - key: APPS_SCRIPT_WEBAPP_URL
         sync: false
       - key: APPS_SCRIPT_SHARED_SECRET
         sync: false
 
-      # --- AICredits key ---
+      # --- Standard CRM ---
+      - key: CRM_URL
+        sync: false
+      - key: CRM_BOT_TOKEN
+        sync: false
+
+      # --- AICredits ---
       - key: AICREDITS_API_KEY
         sync: false

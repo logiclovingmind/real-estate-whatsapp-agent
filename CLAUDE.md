@@ -51,6 +51,14 @@ reached over HTTPS with a shared secret. Keep this boundary clean.
   phone number — ephemeral chat memory + current stage.
 - **Business records** (the lead, the booking) live in the **Google Sheet** —
   the durable source of truth. Never store chat history in the Sheet.
+- **Standard CRM sync (optional, alongside the Sheet):** `src/crm.js` also
+  pushes each lead to a Logic Loving Mind Standard-tier CRM deployment via its
+  bot intake endpoint (`POST {CRM_URL}/api/integrations/whatsapp/lead`, bearer
+  `CRM_BOT_TOKEN`). Called once per turn from the agent loop (`syncLead`);
+  it hash-guards the payload (stored in `conversations.crm_json`) so the
+  network is only hit when the lead actually changed, requires a `name`
+  (CRM contract), announces a booked visit exactly once, and no-ops entirely
+  when `CRM_URL`/`CRM_BOT_TOKEN` are unset. CRM failures never break a reply.
 
 ### Alternative (only if asked)
 Everything can run *inside* Apps Script (its web app serves the webhook and

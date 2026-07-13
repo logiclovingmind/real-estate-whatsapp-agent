@@ -27,13 +27,18 @@ db.exec(`
   );
 `);
 
-// Additive migration for DBs created before lang_locked existed.
-const hasLangLocked = db
+// Additive migrations for DBs created before these columns existed.
+const columns = db
   .prepare("PRAGMA table_info(conversations)")
   .all()
-  .some((c) => c.name === "lang_locked");
-if (!hasLangLocked) {
+  .map((c) => c.name);
+if (!columns.includes("lang_locked")) {
   db.exec("ALTER TABLE conversations ADD COLUMN lang_locked INTEGER NOT NULL DEFAULT 0");
+}
+// crm_json tracks what was last pushed to the external CRM (payload hash +
+// visit slot), so restarts don't re-announce unchanged leads.
+if (!columns.includes("crm_json")) {
+  db.exec("ALTER TABLE conversations ADD COLUMN crm_json TEXT NOT NULL DEFAULT '{}'");
 }
 
 const selectStmt = db.prepare("SELECT * FROM conversations WHERE phone = ?");
@@ -47,6 +52,7 @@ const updateStmt = db.prepare(
        lang_locked = @lang_locked,
        fields_json = @fields_json,
        history_json = @history_json,
+       crm_json = @crm_json,
        updated_at = datetime('now')
    WHERE phone = @phone`
 );
@@ -81,6 +87,7 @@ function rowToState(row) {
     langLocked: Boolean(row.lang_locked),
     fields: JSON.parse(row.fields_json),
     history: JSON.parse(row.history_json),
+    crm: JSON.parse(row.crm_json || "{}"),
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
@@ -104,6 +111,7 @@ export function saveState(state) {
     lang_locked: state.langLocked ? 1 : 0,
     fields_json: JSON.stringify(state.fields || {}),
     history_json: JSON.stringify(history),
+    crm_json: JSON.stringify(state.crm || {}),
   });
 }
 

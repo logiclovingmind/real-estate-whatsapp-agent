@@ -10,38 +10,17 @@ process.env.CONVERSATIONS_DB = join(mkdtempSync(join(tmpdir(), "re-")), "t.db");
 const { runTool, flushLeadToSheet } = await import("../src/tools.js");
 const { getState } = await import("../src/state.js");
 const appsscript = (await import("../src/appsscript.js")).default;
+// Stub network calls so tests don't hit the real Calendar.
+appsscript.bookAppointment = async () => ({ ok: true, event_id: "evt-1", when: "Mon 1 Jan 2026, 11:00 AM" });
+appsscript.cancelAppointment = async () => ({ ok: true, cancelled: true });
 
-// Capture Apps Script upserts without hitting the network.
-let upsertCalls = [];
-appsscript.upsertLead = async (lead) => {
-  upsertCalls.push(lead);
-  return { ok: true };
-};
-
-test("flushLeadToSheet writes qualifying/qualified leads to the Sheet", async () => {
-  upsertCalls = [];
+test("flushLeadToSheet is a no-op (lead storage moved to CRM)", async () => {
   const state = getState("t-flush-qual");
   await runTool("save_field", { field: "intent", value: "buy" }, { state });
   assert.equal(state.stage, "qualifying");
   const res = await flushLeadToSheet(state);
   assert.equal(res.ok, true);
-  assert.equal(upsertCalls.length, 1);
-  assert.equal(upsertCalls[0].phone, "t-flush-qual");
-  assert.equal(upsertCalls[0].intent, "buy");
-});
-
-test("flushLeadToSheet skips new/booked/handoff leads (no wasted write)", async () => {
-  upsertCalls = [];
-  const fresh = getState("t-flush-new"); // stage 'new', nothing learned
-  const r1 = await flushLeadToSheet(fresh);
-  assert.equal(r1.skipped, true);
-
-  const booked = getState("t-flush-booked");
-  booked.stage = "booked";
-  const r2 = await flushLeadToSheet(booked);
-  assert.equal(r2.skipped, true);
-
-  assert.equal(upsertCalls.length, 0);
+  assert.equal(res.skipped, true);
 });
 
 test("save_field persists a known field", async () => {
