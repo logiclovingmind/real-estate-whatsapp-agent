@@ -165,6 +165,13 @@ export function getConversation(phone) {
   };
 }
 
+// Wipe a conversation entirely — used by the simulator's "reset" button so a
+// tester can start a fresh chat without deploying / touching the DB by hand.
+const deleteStmt = db.prepare("DELETE FROM conversations WHERE phone = ?");
+export function deleteState(phone) {
+  deleteStmt.run(phone);
+}
+
 // Merge a single learned field into state.fields (used by save_field tool).
 export function setField(state, key, value) {
   state.fields = { ...state.fields, [key]: value };

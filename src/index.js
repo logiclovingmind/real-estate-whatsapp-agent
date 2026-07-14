@@ -10,7 +10,7 @@ import {
   sendText,
   stripMarkdown,
 } from "./whatsapp.js";
-import { getState, saveState } from "./state.js";
+import { getState, saveState, deleteState, getConversation } from "./state.js";
 import { handleMessage } from "./agent.js";
 
 const app = express();
@@ -29,6 +29,59 @@ app.use(
 
 // Health check.
 app.get("/", (_req, res) => res.send("ok"));
+
+// --- Simulator API (used by the CRM's Train page) ------------------------
+// Bearer-auth'd endpoint that reuses the exact same handleMessage() loop
+// as the WhatsApp webhook, so what you see here is what a real lead gets.
+function simulateAuth(req, res, next) {
+  const token = process.env.SIMULATE_TOKEN;
+  if (!token) return res.status(503).json({ error: "SIMULATE_TOKEN not configured on agent" });
+  const auth = req.get("authorization") || "";
+  if (auth !== `Bearer ${token}`) return res.status(401).json({ error: "unauthorized" });
+  next();
+}
+
+function snapshotState(state) {
+  return {
+    phone: state.phone,
+    stage: state.stage,
+    fields: state.fields || {},
+    crm: state.crm || {},
+    messageCount: (state.history || []).filter((m) => m.role === "user" || m.role === "assistant").length,
+    updatedAt: state.updated_at,
+  };
+}
+
+app.post("/api/simulate", simulateAuth, async (req, res) => {
+  const { phone, message } = req.body || {};
+  if (typeof phone !== "string" || !phone.trim()) return res.status(400).json({ error: "phone required" });
+  if (typeof message !== "string" || !message.trim()) return res.status(400).json({ error: "message required" });
+  const state = getState(phone.trim());
+  try {
+    const { reply, handoff, handoffReason } = await handleMessage(state, message);
+    res.json({ reply, handoff: !!handoff, handoffReason: handoffReason || null, state: snapshotState(state) });
+  } catch (err) {
+    console.error("simulate failed:", err);
+    res.status(500).json({ error: err.message || "internal error" });
+  }
+});
+
+app.post("/api/simulate/reset", simulateAuth, (req, res) => {
+  const { phone } = req.body || {};
+  if (typeof phone !== "string" || !phone.trim()) return res.status(400).json({ error: "phone required" });
+  deleteState(phone.trim());
+  res.json({ ok: true });
+});
+
+app.get("/api/simulate/conversation", simulateAuth, (req, res) => {
+  const phone = String(req.query.phone || "").trim();
+  if (!phone) return res.status(400).json({ error: "phone required" });
+  const convo = getConversation(phone);
+  if (!convo) return res.json({ phone, messages: [], state: null });
+  const state = snapshotState(getState(phone));
+  res.json({ phone, messages: convo.messages, state });
+});
+// --------------------------------------------------------------------------
 
 // Webhook verification (Meta calls this once during setup).
 app.get("/webhook", (req, res) => {
