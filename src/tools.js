@@ -273,7 +273,7 @@ const handlers = {
       phone: state.phone,
       name: state.fields?.name || "",
       datetime: args.datetime,
-      lead,
+      lead: leadFromState(state),
     };
     const res = await appsscript.bookAppointment(booking);
     if (res?.ok) {
