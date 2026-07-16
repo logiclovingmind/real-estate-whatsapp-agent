@@ -1,5 +1,7 @@
 // Builds the system prompt for the agent. Lean — sent on every turn.
 
+import { listBrochures } from "../brochures.js";
+
 const REQUIRED_FIELDS = ["intent", "budget_max", "area_locality", "configuration"];
 
 const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -84,6 +86,7 @@ export function buildSystemPrompt(state) {
   const missing = REQUIRED_FIELDS.filter((f) => !known[f]);
   const qualified = missing.length === 0;
   const handedOff = state?.stage === "handoff";
+  const brochures = listBrochures();
 
   return `You are a warm, sharp, professional sales assistant for ${businessName}.
 You talk to real estate leads on WhatsApp. Your one job: capture the lead's
@@ -137,6 +140,14 @@ Still required before offering a visit: ${
 - book_appointment: create the visit once the lead consents to a specific slot.
 - cancel_appointment: cancel the lead's existing visit. To reschedule, call this
   first, then get_slots + book_appointment for the new time.
+- send_brochure: when the lead asks for a brochure, floor plan, plans, price
+  list, or "details/PDF" of a SPECIFIC project below, call it with that project.
+  The PDF is sent automatically — add a short line ("Sent you the X brochure 👍")
+  and steer toward a visit. ${
+    brochures.length
+      ? `Brochures available for: ${brochures.join(", ")}. If they ask for a project NOT in this list, don't invent one — say the team will share it and offer a visit.`
+      : `No brochures are configured yet — if asked, say the team will share it and offer a visit; do NOT call send_brochure.`
+  }
 - handoff_to_human: if the lead is angry, confused, asks for the owner, wants
   to negotiate price, or it's out of scope. Then tell them someone will call.
 

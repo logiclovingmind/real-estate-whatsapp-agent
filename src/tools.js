@@ -3,6 +3,8 @@
 // compact result. Errors return { ok: false, reason } so the model can recover.
 
 import appsscript from "./appsscript.js";
+import whatsapp from "./whatsapp.js";
+import { findBrochure, listBrochures } from "./brochures.js";
 import { setField, saveState } from "./state.js";
 import { REQUIRED_FIELDS } from "./prompts/system.js";
 
@@ -120,6 +122,25 @@ export const toolSchemas = [
       description:
         "Cancel the lead's existing site visit: deletes the Calendar event and clears the booking in the CRM. To RESCHEDULE, cancel first, then get_slots and book_appointment for the new time.",
       parameters: { type: "object", properties: {}, required: [] },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "send_brochure",
+      description:
+        "Send the lead a project's brochure / floor-plan PDF on WhatsApp. Call when the lead asks for a brochure, floor plan, plans, price list, or 'details' of a SPECIFIC project we have. The document is delivered automatically; write a short line alongside it.",
+      parameters: {
+        type: "object",
+        properties: {
+          project: {
+            type: "string",
+            description:
+              "The project name the lead asked about, e.g. 'Skyline Heights'. Must be a project we actually have a brochure for.",
+          },
+        },
+        required: ["project"],
+      },
     },
   },
   {
@@ -307,6 +328,28 @@ const handlers = {
       saveState(state);
     }
     return res;
+  },
+
+  async send_brochure(args, { state }) {
+    if (!args?.project) return { ok: false, reason: "missing project" };
+    const brochure = findBrochure(args.project);
+    if (!brochure) {
+      // Never invent a brochure — tell the model what we actually have so it can
+      // offer a real option or fall back to a site visit.
+      return { ok: false, reason: "no brochure for that project", available: listBrochures() };
+    }
+    if (!state.phone) return { ok: false, reason: "no phone to send to" };
+
+    const res = await whatsapp.sendDocument(
+      state.phone,
+      brochure.url,
+      brochure.filename,
+      brochure.project
+    );
+    if (!res?.ok) {
+      return { ok: false, reason: res?.reason || "send failed", project: brochure.project };
+    }
+    return { ok: true, sent: true, project: brochure.project };
   },
 
   async handoff_to_human(args, { state }) {

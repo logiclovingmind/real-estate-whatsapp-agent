@@ -7,12 +7,25 @@ import { join } from "node:path";
 // Point state at a throwaway DB before importing the modules that open it.
 process.env.CONVERSATIONS_DB = join(mkdtempSync(join(tmpdir(), "re-")), "t.db");
 
+// A brochure catalog for send_brochure tests. Must be set before importing
+// tools.js so brochures.js parses it.
+process.env.BROCHURES = JSON.stringify([
+  { project: "Skyline Heights", aliases: ["skyline"], url: "https://cdn.example.com/skyline.pdf", filename: "Skyline Heights.pdf" },
+]);
+
 const { runTool, flushLeadToSheet } = await import("../src/tools.js");
 const { getState } = await import("../src/state.js");
 const appsscript = (await import("../src/appsscript.js")).default;
+const whatsapp = (await import("../src/whatsapp.js")).default;
 // Stub network calls so tests don't hit the real Calendar.
 appsscript.bookAppointment = async () => ({ ok: true, event_id: "evt-1", when: "Mon 1 Jan 2026, 11:00 AM" });
 appsscript.cancelAppointment = async () => ({ ok: true, cancelled: true });
+// Stub the outbound WhatsApp document send so tests don't hit the Graph API.
+let _lastDoc = null;
+whatsapp.sendDocument = async (to, link, filename, caption) => {
+  _lastDoc = { to, link, filename, caption };
+  return { ok: true, data: {} };
+};
 
 test("flushLeadToSheet is a no-op (lead storage moved to CRM)", async () => {
   const state = getState("t-flush-qual");
@@ -83,6 +96,32 @@ test("field collection never pulls a lead back out of a terminal stage", async (
   state.stage = "booked";
   await runTool("save_field", { field: "notes", value: "called back" }, { state });
   assert.equal(state.stage, "booked");
+});
+
+test("send_brochure sends a matching project's PDF to the lead", async () => {
+  _lastDoc = null;
+  const state = getState("t-broch-ok");
+  const res = await runTool("send_brochure", { project: "skyline" }, { state });
+  assert.equal(res.ok, true);
+  assert.equal(res.sent, true);
+  assert.equal(res.project, "Skyline Heights");
+  assert.equal(_lastDoc.to, "t-broch-ok");
+  assert.equal(_lastDoc.link, "https://cdn.example.com/skyline.pdf");
+});
+
+test("send_brochure refuses an unknown project and lists what's available", async () => {
+  _lastDoc = null;
+  const state = getState("t-broch-miss");
+  const res = await runTool("send_brochure", { project: "Nonexistent Towers" }, { state });
+  assert.equal(res.ok, false);
+  assert.deepEqual(res.available, ["Skyline Heights"]);
+  assert.equal(_lastDoc, null); // nothing sent
+});
+
+test("send_brochure requires a project", async () => {
+  const state = getState("t-broch-none");
+  const res = await runTool("send_brochure", {}, { state });
+  assert.equal(res.ok, false);
 });
 
 test("unknown tool returns a clean error", async () => {

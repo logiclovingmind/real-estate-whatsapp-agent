@@ -92,6 +92,27 @@ export async function sendText(to, text) {
   return graphSend(url, payload);
 }
 
+// Send a PDF/document by public link (e.g. a brochure or floor plan). Only
+// valid inside the 24h window. `link` must be a publicly fetchable URL — Meta
+// downloads it server-side. `caption` is optional short text shown with the file.
+export async function sendDocument(to, link, filename, caption) {
+  if (!TOKEN || !PHONE_NUMBER_ID) {
+    return { ok: false, reason: "WhatsApp credentials not configured" };
+  }
+  if (!link) return { ok: false, reason: "missing document link" };
+  const url = `https://graph.facebook.com/${GRAPH_VERSION}/${PHONE_NUMBER_ID}/messages`;
+  const document = { link };
+  if (filename) document.filename = filename;
+  if (caption) document.caption = stripMarkdown(caption);
+  const payload = {
+    messaging_product: "whatsapp",
+    to,
+    type: "document",
+    document,
+  };
+  return graphSend(url, payload);
+}
+
 // Send an approved template (needed to re-engage outside the 24h window).
 export async function sendTemplate(to, templateName, languageCode = "en", components = []) {
   if (!TOKEN || !PHONE_NUMBER_ID) {
@@ -131,4 +152,4 @@ async function graphSend(url, payload) {
   }
 }
 
-export default { verifySignature, parseInbound, sendText, sendTemplate, stripMarkdown };
+export default { verifySignature, parseInbound, sendText, sendDocument, sendTemplate, stripMarkdown };
