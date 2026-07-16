@@ -5,6 +5,7 @@ import OpenAI from "openai";
 import { buildSystemPrompt } from "./prompts/system.js";
 import { toolSchemas, runTool } from "./tools.js";
 import { syncLead as syncLeadToCrm } from "./crm.js";
+import { refreshBrochures } from "./brochures.js";
 import { appendHistory, saveState } from "./state.js";
 
 const MODEL = process.env.MODEL || "openai/gpt-4o-mini";
@@ -29,6 +30,10 @@ export async function handleMessage(state, userText, { onHandoff } = {}) {
   state.language = "en";
   appendHistory(state, { role: "user", content: userText });
   saveState(state);
+
+  // Warm the brochure catalog from the CRM (cached w/ TTL, never throws) so the
+  // system prompt + send_brochure see the broker's uploaded PDFs.
+  await refreshBrochures().catch(() => {});
 
   let handoffReason = null;
   // Push to CRM once per turn — hash-guarded internally, so only hits the
