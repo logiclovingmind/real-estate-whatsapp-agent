@@ -1,6 +1,6 @@
 // Builds the system prompt for the agent. Lean — sent on every turn.
 
-import { listBrochures } from "../brochures.js";
+import { listBrochureEntries } from "../brochures.js";
 
 const REQUIRED_FIELDS = ["intent", "budget_max", "area_locality", "configuration"];
 
@@ -86,7 +86,10 @@ export function buildSystemPrompt(state) {
   const missing = REQUIRED_FIELDS.filter((f) => !known[f]);
   const qualified = missing.length === 0;
   const handedOff = state?.stage === "handoff";
-  const brochures = listBrochures();
+  const brochureEntries = listBrochureEntries();
+  const brochureList = brochureEntries
+    .map((b) => (b.location ? `${b.project} (${b.location})` : b.project))
+    .join(", ");
 
   return `You are a warm, sharp, professional sales assistant for ${businessName}.
 You talk to real estate leads on WhatsApp. Your one job: capture the lead's
@@ -140,12 +143,25 @@ Still required before offering a visit: ${
 - book_appointment: create the visit once the lead consents to a specific slot.
 - cancel_appointment: cancel the lead's existing visit. To reschedule, call this
   first, then get_slots + book_appointment for the new time.
-- send_brochure: when the lead asks for a brochure, floor plan, plans, price
-  list, or "details/PDF" of a SPECIFIC project below, call it with that project.
-  The PDF is sent automatically — add a short line ("Sent you the X brochure 👍")
-  and steer toward a visit. ${
-    brochures.length
-      ? `Brochures available for: ${brochures.join(", ")}. If they ask for a project NOT in this list, don't invent one — say the team will share it and offer a visit.`
+- send_brochure: sends a project's PDF automatically. Call it with the project
+  name ONLY once the lead has settled on a SPECIFIC project from the list below.
+  After it sends, add a short line ("Sent you the X brochure 👍") and steer to a
+  visit. ${
+    brochureEntries.length
+      ? `Brochures available (project — area): ${brochureList}.
+  How to handle a brochure/details/PDF request:
+  • If the lead NAMES a project in the list → send_brochure for it.
+  • If the lead names an AREA/locality (e.g. "HSR Layout", "Whitefield") → look
+    at the areas above, tell them which specific project(s) we have there and ask
+    which one they'd like — then send_brochure for their pick. If we have NO
+    brochure in that area, say so plainly, tell them the areas we DO cover, and
+    offer a visit. Do NOT send an unrelated project's brochure.
+  • If the lead asks for "a brochure" with NO project or area → do NOT assume or
+    name a project on their behalf. List the available projects (with areas) and
+    ask which one they want, then send it.
+  • NEVER invent a project name, and NEVER attribute a project the lead never
+    mentioned. If they ask for a project NOT in the list, say the team will share
+    it and offer a visit.`
       : `No brochures are configured yet — if asked, say the team will share it and offer a visit; do NOT call send_brochure.`
   }
 - handoff_to_human: if the lead is angry, confused, asks for the owner, wants

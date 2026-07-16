@@ -26,6 +26,7 @@ function normalize(list) {
       project: String(b.project).trim(),
       url: String(b.url).trim(),
       filename: (b.filename || `${b.project}.pdf`).trim(),
+      location: b.location ? String(b.location).trim() : "",
       aliases: Array.isArray(b.aliases)
         ? b.aliases.map((a) => String(a).toLowerCase().trim()).filter(Boolean)
         : [],
@@ -94,6 +95,12 @@ export function listBrochures() {
   return active().map((b) => b.project);
 }
 
+// Richer catalog for the system prompt: project name + area, so the agent can
+// point a lead at what's available in the locality they mention.
+export function listBrochureEntries() {
+  return active().map((b) => ({ project: b.project, location: b.location || "" }));
+}
+
 // Find a brochure by project name. Matches (in order): exact name, alias,
 // then substring either way so "skyline" finds "Skyline Heights" and vice
 // versa. Returns null when nothing matches — the caller must NOT invent one.
@@ -115,4 +122,4 @@ export function findBrochure(query) {
   return hit || null;
 }
 
-export default { listBrochures, findBrochure, refreshBrochures };
+export default { listBrochures, listBrochureEntries, findBrochure, refreshBrochures };
