@@ -1,7 +1,7 @@
 {
   "name": "real-estate-whatsapp-agent",
   "version": "0.1.0",
-  "description": "WhatsApp AI SDR agent for a real estate business: qualifies leads, logs to Google Sheets, books site visits on Google Calendar.",
+  "description": "WhatsApp AI SDR agent for a real estate business: qualifies leads, syncs them to the Standard CRM, and books site visits on Google Calendar.",
   "type": "module",
   "main": "src/index.js",
   "engines": {

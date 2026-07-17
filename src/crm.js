@@ -7,6 +7,7 @@
 
 import { createHash } from "node:crypto";
 import { saveState } from "./state.js";
+import { log } from "./log.js";
 
 const INTAKE_PATH = "/api/integrations/whatsapp/lead";
 
@@ -98,7 +99,9 @@ export async function syncLead(state) {
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-      return { ok: false, reason: data.error || `HTTP ${res.status}` };
+      const reason = data.error || `HTTP ${res.status}`;
+      log.warn("crm_sync_rejected", { phone: state.phone, status: res.status, reason });
+      return { ok: false, reason };
     }
     state.crm = {
       hash,
@@ -108,6 +111,7 @@ export async function syncLead(state) {
     saveState(state);
     return { ok: true, lead_id: data.lead_id, created: data.created };
   } catch (err) {
+    log.error("crm_request_failed", { phone: state.phone, error: err.message });
     return { ok: false, reason: `crm request failed: ${err.message}` };
   }
 }

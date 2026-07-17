@@ -59,7 +59,7 @@ export const toolSchemas = [
     function: {
       name: "upsert_lead",
       description:
-        "Write the full lead record to the Google Sheet CRM (creates or updates the row keyed by phone).",
+        "Update this lead's pipeline stage. The full lead record syncs to the CRM automatically each turn — call this when the stage changes (e.g. to 'qualified' or 'lost').",
       parameters: {
         type: "object",
         properties: {

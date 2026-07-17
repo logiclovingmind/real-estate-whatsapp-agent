@@ -12,6 +12,7 @@ import {
 } from "./whatsapp.js";
 import { getState, saveState, deleteState, getConversation } from "./state.js";
 import { handleMessage } from "./agent.js";
+import { log } from "./log.js";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -61,7 +62,7 @@ app.post("/api/simulate", simulateAuth, async (req, res) => {
     const { reply, handoff, handoffReason } = await handleMessage(state, message);
     res.json({ reply, handoff: !!handoff, handoffReason: handoffReason || null, state: snapshotState(state) });
   } catch (err) {
-    console.error("simulate failed:", err);
+    log.error("simulate_failed", { phone: phone.trim(), error: err.message });
     res.status(500).json({ error: err.message || "internal error" });
   }
 });
@@ -108,7 +109,7 @@ app.post("/webhook", (req, res) => {
     if (!inbound.from) continue;
     if (alreadySeen(inbound.messageId)) continue;
     enqueue(inbound.from, () => processInbound(inbound)).catch((err) => {
-      console.error("processInbound failed:", err);
+      log.error("process_inbound_failed", { phone: inbound.from, error: err.message });
     });
   }
 });
@@ -156,7 +157,12 @@ async function processInbound(inbound) {
     onHandoff: notifyOwner,
   });
 
-  if (reply) await sendText(phone, stripMarkdown(reply));
+  if (reply) {
+    const sent = await sendText(phone, stripMarkdown(reply));
+    if (sent && sent.ok === false) {
+      log.error("whatsapp_send_failed", { phone, reason: sent.reason });
+    }
+  }
 }
 
 async function notifyOwner(reason, state) {
@@ -166,7 +172,7 @@ async function notifyOwner(reason, state) {
 }
 
 app.listen(PORT, () => {
-  console.log(`Real estate WhatsApp agent listening on :${PORT}`);
+  log.info("server_listening", { port: Number(PORT) });
 });
 
 export default app;

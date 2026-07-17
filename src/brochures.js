@@ -10,6 +10,8 @@
 //   BROCHURES=[{"project":"Skyline Heights","aliases":["skyline"],
 //     "url":"https://.../Skyline-Heights.pdf","filename":"Skyline Heights.pdf"}]
 
+import { log } from "./log.js";
+
 const CATALOG_PATH = "/api/integrations/whatsapp/brochures";
 const TTL_MS = 60_000;
 
@@ -73,11 +75,15 @@ export async function refreshBrochures({ force = false } = {}) {
         headers: { Authorization: `Bearer ${crm.token}` },
         signal: AbortSignal.timeout(8000),
       });
-      if (!res.ok) return;
+      if (!res.ok) {
+        log.warn("brochure_catalog_error", { status: res.status });
+        return;
+      }
       const data = await res.json().catch(() => null);
       _crmCatalog = normalize(data?.brochures);
       _fetchedAt = Date.now();
-    } catch {
+    } catch (err) {
+      log.warn("brochure_catalog_fetch_failed", { error: err.message });
       /* keep the previous cache */
     } finally {
       _inflight = null;

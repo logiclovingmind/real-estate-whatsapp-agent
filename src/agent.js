@@ -7,6 +7,7 @@ import { toolSchemas, runTool } from "./tools.js";
 import { syncLead as syncLeadToCrm } from "./crm.js";
 import { refreshBrochures } from "./brochures.js";
 import { appendHistory, saveState } from "./state.js";
+import { log } from "./log.js";
 
 const MODEL = process.env.MODEL || "openai/gpt-4o-mini";
 const MAX_TOOL_ROUNDS = 5;
@@ -41,8 +42,9 @@ export async function handleMessage(state, userText, { onHandoff } = {}) {
   const flushLead = async () => {
     try {
       await syncLeadToCrm(state);
-    } catch {
-      /* CRM sync failure must not break the reply to the lead */
+    } catch (err) {
+      // CRM sync failure must not break the reply to the lead.
+      log.error("crm_flush_failed", { phone: state.phone, error: err.message });
     }
   };
 
@@ -93,13 +95,19 @@ export async function handleMessage(state, userText, { onHandoff } = {}) {
 
       const result = await runTool(name, args, { state });
 
+      if (result && result.ok === false) {
+        log.warn("tool_failed", { phone: state.phone, tool: name, reason: result.reason });
+      }
+
       if (name === "handoff_to_human" && result?.handoff) {
         handoffReason = result.reason || "unspecified";
+        log.info("handoff", { phone: state.phone, reason: handoffReason });
         if (typeof onHandoff === "function") {
           try {
             await onHandoff(handoffReason, state);
-          } catch {
-            /* notification failure must not break the turn */
+          } catch (err) {
+            // Notification failure must not break the turn.
+            log.error("handoff_notify_failed", { phone: state.phone, error: err.message });
           }
         }
       }
@@ -133,8 +141,9 @@ export async function handleMessage(state, userText, { onHandoff } = {}) {
       await flushLead();
       return { reply: content, handoff: Boolean(handoffReason), handoffReason };
     }
-  } catch {
-    /* fall through to the canned reply below */
+  } catch (err) {
+    // Fall through to the canned reply below.
+    log.error("model_final_round_failed", { phone: state.phone, error: err.message });
   }
 
   const reply = fallbackReply(state.language);

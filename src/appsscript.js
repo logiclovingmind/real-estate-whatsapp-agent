@@ -2,6 +2,8 @@
 // After removing the Google Sheet, this only handles Calendar operations:
 // get_slots, book_appointment, cancel_appointment, and availability blocks.
 
+import { log } from "./log.js";
+
 const WEBAPP_URL = process.env.APPS_SCRIPT_WEBAPP_URL;
 const SHARED_SECRET = process.env.APPS_SCRIPT_SHARED_SECRET;
 
@@ -32,10 +34,13 @@ async function call(action, payload = {}) {
     }
 
     if (!res.ok) {
-      return { ok: false, reason: data.reason || `HTTP ${res.status}` };
+      const reason = data.reason || `HTTP ${res.status}`;
+      log.warn("appsscript_error", { action, status: res.status, reason });
+      return { ok: false, reason };
     }
     return data;
   } catch (err) {
+    log.error("appsscript_request_failed", { action, error: err.message });
     return { ok: false, reason: `request failed: ${err.message}` };
   }
 }
