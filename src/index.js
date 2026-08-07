@@ -133,9 +133,11 @@ function enqueue(phone, task) {
   const prev = queues.get(phone) || Promise.resolve();
   const next = prev.then(task, task);
   queues.set(phone, next);
+  // `.finally()` forks a new promise; without its own catch a rejected task
+  // surfaces as an unhandled rejection and kills the process.
   next.finally(() => {
     if (queues.get(phone) === next) queues.delete(phone);
-  });
+  }).catch(() => {});
   return next;
 }
 
@@ -153,9 +155,13 @@ async function processInbound(inbound) {
     return;
   }
 
-  const { reply } = await handleMessage(state, inbound.text, {
-    onHandoff: notifyOwner,
-  });
+  let reply;
+  try {
+    ({ reply } = await handleMessage(state, inbound.text, { onHandoff: notifyOwner }));
+  } catch (err) {
+    log.error("handle_message_failed", { phone, error: err.message });
+    reply = "Sorry, I'm having a bit of trouble right now. Could you send that again in a moment?";
+  }
 
   if (reply) {
     const sent = await sendText(phone, stripMarkdown(reply));
@@ -170,6 +176,12 @@ async function notifyOwner(reason, state) {
   const name = state.fields?.name || "Unknown";
   await sendText(HANDOFF_NUMBER, `Handoff needed for ${name} (${state.phone}): ${reason}`);
 }
+
+// Last-resort guard: an always-on lead-capture service must not die on a stray
+// rejection — a crash drops every in-flight conversation, not just the bad one.
+process.on("unhandledRejection", (err) => {
+  log.error("unhandled_rejection", { error: err?.message || String(err) });
+});
 
 app.listen(PORT, () => {
   log.info("server_listening", { port: Number(PORT) });

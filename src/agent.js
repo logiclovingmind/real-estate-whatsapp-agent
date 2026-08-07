@@ -19,6 +19,10 @@ function getClient() {
     _client = new OpenAI({
       apiKey: process.env.AICREDITS_API_KEY,
       baseURL: process.env.AICREDITS_BASE_URL || "https://api.aicredits.in/v1",
+      // AICredits drops connections occasionally; fail fast and retry instead of
+      // hanging until the OS TCP timeout (~2min), which loses the turn entirely.
+      timeout: 30000,
+      maxRetries: 3,
     });
   }
   return _client;
