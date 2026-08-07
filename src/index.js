@@ -54,10 +54,17 @@ function snapshotState(state) {
 }
 
 app.post("/api/simulate", simulateAuth, async (req, res) => {
-  const { phone, message } = req.body || {};
+  const { phone, message, name } = req.body || {};
   if (typeof phone !== "string" || !phone.trim()) return res.status(400).json({ error: "phone required" });
   if (typeof message !== "string" || !message.trim()) return res.status(400).json({ error: "message required" });
   const state = getState(phone.trim());
+  // Real inbound messages carry a WhatsApp profile name, which the CRM requires
+  // before it will accept a lead. The simulator has no profile, so seed one —
+  // otherwise trained conversations silently never reach the CRM.
+  if (state.fields?.name == null) {
+    state.fields = { ...state.fields, name: (typeof name === "string" && name.trim()) || "Train Lead" };
+    saveState(state);
+  }
   try {
     const { reply, handoff, handoffReason } = await handleMessage(state, message);
     res.json({ reply, handoff: !!handoff, handoffReason: handoffReason || null, state: snapshotState(state) });
