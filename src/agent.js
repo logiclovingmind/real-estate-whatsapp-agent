@@ -2,6 +2,7 @@
 // -> dispatch any tool calls -> loop until the model produces a text reply.
 
 import OpenAI from "openai";
+import { Agent } from "node:https";
 import { buildSystemPrompt } from "./prompts/system.js";
 import { toolSchemas, runTool } from "./tools.js";
 import { syncLead as syncLeadToCrm } from "./crm.js";
@@ -23,6 +24,10 @@ function getClient() {
       // hanging until the OS TCP timeout (~2min), which loses the turn entirely.
       timeout: 30000,
       maxRetries: 3,
+      // Without keep-alive every call opens a fresh TCP+TLS connection to India;
+      // on the long Render(Oregon)->AICredits path those connects intermittently
+      // time out, which surfaced to leads as "Connection error." Reuse sockets.
+      httpAgent: new Agent({ keepAlive: true, keepAliveMsecs: 30000, maxSockets: 20 }),
     });
   }
   return _client;
